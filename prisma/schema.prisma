@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+/// Represents a user account in the system
+model User {
+  id         String    @id @default(cuid())
+  email      String    @unique
+  name       String?
+  mobile     String?
+  password   String
+  role       Role      @default(USER)
+  loginCount Int       @default(0)
+  lastLogin  DateTime?
+  createdAt  DateTime  @default(now())
+
+  wallet                 Wallet?
+  transactions           Transaction[]
+  payouts                PayoutRequest[]
+  missingCashbackTickets MissingCashbackTicket[]
+  cashbackClaims         CashbackClaim[]
+}
+
+/// Represents a user's cashback and rewards wallet
+model Wallet {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id])
+  pendingBalance   Float    @default(0.00)
+  confirmedBalance Float    @default(0.00)
+  availableBalance Float    @default(0.00)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+enum TransactionType {
+  EARNING
+  WITHDRAWAL
+  BONUS
+}
+
+enum TransactionStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+/// Represents a wallet transaction (cashback earning or withdrawal)
+model Transaction {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id])
+  amount      Float
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+  description String?
+  storeName   String?
+  orderId     String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+/// Stores OTPs for email/mobile verification purposes
+model OtpVerification {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  otp       String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+/// Represents a product or deal associated with a Store and Category
+model Product {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  title         String
+  storeId       String
+  storeRel      Store    @relation(fields: [storeId], references: [id])
+  categoryId    String
+  categoryRel   Category @relation(fields: [categoryId], references: [id])
+  image         String
+  originalPrice Float
+  salePrice     Float
+  discount      Float
+  affiliateUrl  String
+  isTrending    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  cashbackClaims CashbackClaim[]
+}
+
+/// Represents an e-commerce platform or store (e.g., Amazon, Flipkart)
+model Store {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String?
+  logoUrl   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String?
+  image     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+enum PayoutMethod {
+  UPI
+  BANK_TRANSFER
+  AMAZON_PAY
+}
+
+enum PayoutStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Represents a user's request to withdraw their available cashback balance
+model PayoutRequest {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  amount         Float
+  method         PayoutMethod
+  paymentDetails String // UPI ID, Bank details, etc.
+  status         PayoutStatus @default(PENDING)
+  adminNote      String?
+  createdAt      DateTime     @default(now())
+}
+
+enum TicketStatus {
+  PENDING
+  RESOLVED
+  REJECTED
+}
+
+/// Represents a user's missing cashback claim
+model MissingCashbackTicket {
+  id               String          @id @default(cuid())
+  ticketId         String?         @unique
+  userId           String
+  user             User            @relation(fields: [userId], references: [id])
+  storeName        String
+  orderDate        DateTime
+  orderId          String
+  orderAmount      Float
+  userNote         String?
+  status           TicketStatus    @default(PENDING)
+  adminNote        String?
+  messages         TicketMessage[]
+  orderScreenshots String[]        @default([])
+  adminUnread      Boolean         @default(true) // True when a new ticket is created, or when user replies
+  userUnread       Boolean         @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Represents a single message in a ticket's conversation thread
+model TicketMessage {
+  id         String                @id @default(cuid())
+  ticketId   String
+  ticket     MissingCashbackTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender     String // 'USER' or 'ADMIN'
+  message    String
+  attachment String?
+  createdAt  DateTime              @default(now())
+}
+
+enum ClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Represents a user's manual claim for cashback with mandatory proofs
+model CashbackClaim {
+  id                 String      @id @default(cuid())
+  ticketId           String?     @unique
+  userId             String
+  user               User        @relation(fields: [userId], references: [id])
+  storeName          String
+  productId          String?
+  product            Product?    @relation(fields: [productId], references: [id])
+  orderId            String
+  orderAmount        Float
+  orderDate          DateTime
+  invoiceScreenshot  String
+  reviewScreenshot   String
+  noReturnScreenshot String
+  status             ClaimStatus @default(PENDING)
+  adminNote          String?
+  awardedCashback    Float?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+}
