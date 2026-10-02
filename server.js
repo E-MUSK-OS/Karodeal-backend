@@ -44,7 +44,6 @@ app.use('/api/missing-cashback', missingCashbackRoutes);
 app.use('/api/claims', claimRoutes);
 app.use('/api/transactions', transactionRoutes);
 
-// Initialize background jobs only if not on Vercel (serverless functions shouldn't run persistent cron jobs)
 if (!process.env.VERCEL) {
   initCronJobs();
 
