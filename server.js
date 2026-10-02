@@ -44,9 +44,13 @@ app.use('/api/missing-cashback', missingCashbackRoutes);
 app.use('/api/claims', claimRoutes);
 app.use('/api/transactions', transactionRoutes);
 
-// Initialize background jobs
-initCronJobs();
+// Initialize background jobs only if not on Vercel (serverless functions shouldn't run persistent cron jobs)
+if (!process.env.VERCEL) {
+  initCronJobs();
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+}
+
+export default app;

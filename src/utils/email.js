@@ -10,13 +10,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Verify connection configuration
-transporter.verify(function (error, success) {
-  if (error) {
-    console.error('SMTP Connection Error: ', error);
-  } else {
-    console.log('SMTP Server is ready to take our messages');
-  }
-});
+// Verify connection configuration is disabled globally to prevent slow cold starts
+// and EAUTH errors crashing the server. You can verify it manually if needed.
 
 export { transporter };
