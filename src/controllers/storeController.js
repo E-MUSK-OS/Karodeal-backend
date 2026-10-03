@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { uploadToCloudinary } from '../utils/cloudinary.js';
 
 const prisma = new PrismaClient();
 
@@ -18,11 +19,16 @@ export const createStore = async (req, res) => {
   try {
     const { name, slug, logoUrl } = req.body;
     const storeSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now();
+    let finalLogoUrl = logoUrl;
+    if (logoUrl && logoUrl.startsWith('data:image')) {
+      finalLogoUrl = await uploadToCloudinary(logoUrl, 'stores');
+    }
+
     const store = await prisma.store.create({
       data: {
         name,
         slug: storeSlug,
-        logoUrl: logoUrl || null
+        logoUrl: finalLogoUrl || null
       }
     });
     res.status(201).json(store);
@@ -36,11 +42,17 @@ export const updateStore = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, slug, logoUrl } = req.body;
+    
+    let finalLogoUrl = logoUrl;
+    if (logoUrl && logoUrl.startsWith('data:image')) {
+      finalLogoUrl = await uploadToCloudinary(logoUrl, 'stores');
+    }
 
-    const updateData = {
-      name,
-      logoUrl: logoUrl || null
-    };
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (logoUrl !== undefined) {
+      updateData.logoUrl = finalLogoUrl || null;
+    }
 
     if (slug) {
       updateData.slug = slug;

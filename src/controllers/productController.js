@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { uploadToCloudinary } from '../utils/cloudinary.js';
 
 const prisma = new PrismaClient();
 
@@ -38,13 +39,17 @@ export const getProductBySlug = async (req, res) => {
 export const createProduct = async (req, res) => {
   try {
     const productData = req.body;
+    let imageUrl = productData.image;
+    if (imageUrl && imageUrl.startsWith('data:image')) {
+      imageUrl = await uploadToCloudinary(imageUrl, 'products');
+    }
     const product = await prisma.product.create({
       data: {
         slug: productData.slug,
         title: productData.title,
         storeId: productData.store,
         categoryId: productData.category,
-        image: productData.image,
+        image: imageUrl,
         originalPrice: parseFloat(productData.originalPrice),
         salePrice: parseFloat(productData.salePrice),
         discount: parseFloat(productData.discount),
@@ -81,6 +86,10 @@ export const updateProduct = async (req, res) => {
     if (updateData.category) {
       updateData.categoryId = updateData.category;
       delete updateData.category;
+    }
+
+    if (updateData.image && updateData.image.startsWith('data:image')) {
+      updateData.image = await uploadToCloudinary(updateData.image, 'products');
     }
 
     // Remove deprecated fields so Prisma doesn't throw errors

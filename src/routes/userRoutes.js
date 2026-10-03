@@ -1,5 +1,5 @@
 import express from 'express';
-import { sendOtp, sendResetOtp, verifyResetOtp, signup, login, getProfile, updateProfile, resetPassword, changePassword, verifyAdmin, deleteAccount, getAllUsers } from '../controllers/userController.js';
+import { sendOtp, sendResetOtp, verifyResetOtp, signup, login, getProfile, updateProfile, resetPassword, changePassword, verifyAdmin, getAllUsers, deleteUserAccount } from '../controllers/userController.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import rateLimit from 'express-rate-limit';
 
@@ -24,10 +24,10 @@ router.post('/reset-password', resetPassword);
 router.get('/profile', requireAuth, getProfile);
 router.put('/profile', requireAuth, updateProfile);
 router.put('/change-password', requireAuth, changePassword);
-router.delete('/delete-account', requireAuth, deleteAccount);
 
 // Admin Routes
 router.get('/verify-admin', requireAdmin, verifyAdmin);
 router.get('/', requireAdmin, getAllUsers);
+router.delete('/:id', requireAdmin, deleteUserAccount);
 
 export default router;

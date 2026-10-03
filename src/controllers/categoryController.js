@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { uploadToCloudinary } from '../utils/cloudinary.js';
 
 const prisma = new PrismaClient();
 
@@ -26,7 +27,7 @@ export const createCategory = async (req, res) => {
     
     let imageUrl = null;
     if (req.file) {
-      imageUrl = `/uploads/${req.file.filename}`;
+      imageUrl = await uploadToCloudinary(req.file.buffer, 'categories');
     }
 
     const category = await prisma.category.create({
@@ -53,7 +54,7 @@ export const updateCategory = async (req, res) => {
     if (slug) updateData.slug = slug;
     
     if (req.file) {
-      updateData.image = `/uploads/${req.file.filename}`;
+      updateData.image = await uploadToCloudinary(req.file.buffer, 'categories');
     }
 
     const category = await prisma.category.update({

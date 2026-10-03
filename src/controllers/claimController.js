@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { uploadToCloudinary } from '../utils/cloudinary.js';
 
 const prisma = new PrismaClient();
 
@@ -11,10 +12,9 @@ export const submitClaim = async (req, res) => {
       return res.status(400).json({ error: 'Invoice, Review, and No-Return screenshots are required.' });
     }
 
-    const getBase64 = (file) => `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
-    const invoiceScreenshot = getBase64(req.files.invoice[0]);
-    const reviewScreenshot = getBase64(req.files.review[0]);
-    const noReturnScreenshot = getBase64(req.files.noReturn[0]);
+    const invoiceScreenshot = await uploadToCloudinary(req.files.invoice[0].buffer, 'claims');
+    const reviewScreenshot = await uploadToCloudinary(req.files.review[0].buffer, 'claims');
+    const noReturnScreenshot = await uploadToCloudinary(req.files.noReturn[0].buffer, 'claims');
 
     // Generate 6-character random alphanumeric ticketId
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

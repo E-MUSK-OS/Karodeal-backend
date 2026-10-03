@@ -296,21 +296,6 @@ export const changePassword = async (req, res) => {
   }
 };
 
-/**
- * Deletes the currently authenticated user's account.
- */
-export const deleteAccount = async (req, res) => {
-  const userId = req.userId;
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    await deleteUser(userId);
-    res.json({ message: 'Account deleted successfully' });
-  } catch (err) {
-    console.error('Delete Account Error:', err);
-    res.status(500).json({ error: err.message || 'Failed to delete account' });
-  }
-};
 
 /**
  * Verifies if the current token belongs to an administrator.
@@ -346,5 +331,19 @@ export const getAllUsers = async (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Server error while fetching users' });
+  }
+};
+
+/**
+ * Deletes a user account (Admin only)
+ */
+export const deleteUserAccount = async (req, res) => {
+  const { id } = req.params;
+  try {
+    await deleteUser(id);
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Server error while deleting user' });
   }
 };

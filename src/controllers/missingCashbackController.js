@@ -1,4 +1,5 @@
 import { prisma } from '../utils/db.js';
+import { uploadToCloudinary } from '../utils/cloudinary.js';
 
 /**
  * Submit a new missing cashback ticket
@@ -13,7 +14,8 @@ export const submitTicket = async (req, res) => {
 
   let orderScreenshots = [];
   if (req.files && req.files.length > 0) {
-    orderScreenshots = req.files.map(file => `data:${file.mimetype};base64,${file.buffer.toString('base64')}`);
+    const uploadPromises = req.files.map(file => uploadToCloudinary(file.buffer, 'tickets'));
+    orderScreenshots = await Promise.all(uploadPromises);
   }
 
   // Generate 6-character random alphanumeric ticketId
@@ -162,7 +164,10 @@ export const addMessage = async (req, res) => {
     return res.status(400).json({ error: 'Message or attachment, and sender are required' });
   }
 
-  const attachment = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}` : null;
+  let attachmentUrl = null;
+  if (req.file) {
+    attachmentUrl = await uploadToCloudinary(req.file.buffer, 'tickets/messages');
+  }
 
   try {
     const ticket = await prisma.missingCashbackTicket.findUnique({ where: { id } });
@@ -178,7 +183,7 @@ export const addMessage = async (req, res) => {
         ticketId: id,
         message: message || '',
         sender,
-        attachment
+        attachment: attachmentUrl
       }
     });
 

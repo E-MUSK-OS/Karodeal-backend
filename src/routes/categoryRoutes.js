@@ -5,19 +5,7 @@ import fs from 'fs';
 import { getCategories, createCategory, deleteCategory, updateCategory } from '../controllers/categoryController.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
-const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/')
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
-  }
-});
+const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 const router = express.Router();
