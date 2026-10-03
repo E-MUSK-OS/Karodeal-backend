@@ -13,7 +13,7 @@ export const submitTicket = async (req, res) => {
 
   let orderScreenshots = [];
   if (req.files && req.files.length > 0) {
-    orderScreenshots = req.files.map(file => `/uploads/${file.filename}`);
+    orderScreenshots = req.files.map(file => `data:${file.mimetype};base64,${file.buffer.toString('base64')}`);
   }
 
   // Generate 6-character random alphanumeric ticketId
@@ -162,7 +162,7 @@ export const addMessage = async (req, res) => {
     return res.status(400).json({ error: 'Message or attachment, and sender are required' });
   }
 
-  const attachment = req.file ? `/uploads/${req.file.filename}` : null;
+  const attachment = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}` : null;
 
   try {
     const ticket = await prisma.missingCashbackTicket.findUnique({ where: { id } });

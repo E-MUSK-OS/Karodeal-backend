@@ -11,9 +11,10 @@ export const submitClaim = async (req, res) => {
       return res.status(400).json({ error: 'Invoice, Review, and No-Return screenshots are required.' });
     }
 
-    const invoiceScreenshot = `/uploads/${req.files.invoice[0].filename}`;
-    const reviewScreenshot = `/uploads/${req.files.review[0].filename}`;
-    const noReturnScreenshot = `/uploads/${req.files.noReturn[0].filename}`;
+    const getBase64 = (file) => `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    const invoiceScreenshot = getBase64(req.files.invoice[0]);
+    const reviewScreenshot = getBase64(req.files.review[0]);
+    const noReturnScreenshot = getBase64(req.files.noReturn[0]);
 
     // Generate 6-character random alphanumeric ticketId
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
