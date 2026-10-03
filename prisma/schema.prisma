@@ -92,10 +92,11 @@ model Product {
   originalPrice Float
   salePrice     Float
   discount      Float
+  cashback      Float?
   affiliateUrl  String
   isTrending    Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   cashbackClaims CashbackClaim[]
 }
 

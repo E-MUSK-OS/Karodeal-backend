@@ -48,6 +48,7 @@ export const createProduct = async (req, res) => {
         originalPrice: parseFloat(productData.originalPrice),
         salePrice: parseFloat(productData.salePrice),
         discount: parseFloat(productData.discount),
+        cashback: productData.cashback ? parseFloat(productData.cashback) : null,
         affiliateUrl: productData.affiliateUrl,
         isTrending: productData.isTrending || false,
       }
@@ -67,9 +68,10 @@ export const updateProduct = async (req, res) => {
     
     // Convert string inputs to correct types if necessary
     const updateData = { ...productData };
-    if (updateData.originalPrice) updateData.originalPrice = parseFloat(updateData.originalPrice);
-    if (updateData.salePrice) updateData.salePrice = parseFloat(updateData.salePrice);
-    if (updateData.discount) updateData.discount = parseFloat(updateData.discount);
+    if (updateData.originalPrice !== undefined) updateData.originalPrice = parseFloat(updateData.originalPrice);
+    if (updateData.salePrice !== undefined) updateData.salePrice = parseFloat(updateData.salePrice);
+    if (updateData.discount !== undefined) updateData.discount = parseFloat(updateData.discount);
+    if (updateData.cashback !== undefined) updateData.cashback = updateData.cashback !== null && updateData.cashback !== '' ? parseFloat(updateData.cashback) : null;
     
     // Map relation fields to current schema
     if (updateData.store) {
