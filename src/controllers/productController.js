@@ -45,7 +45,7 @@ export const createProduct = async (req, res) => {
     }
     const product = await prisma.product.create({
       data: {
-        slug: productData.slug,
+        slug: productData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
         title: productData.title,
         storeId: productData.store,
         categoryId: productData.category,
@@ -71,8 +71,12 @@ export const updateProduct = async (req, res) => {
     const { id } = req.params;
     const productData = req.body;
     
-    // Convert string inputs to correct types if necessary
     const updateData = { ...productData };
+    if (updateData.title) {
+      updateData.slug = updateData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    }
+    delete updateData.slug_manual; // Clean up if any
+    
     if (updateData.originalPrice !== undefined) updateData.originalPrice = parseFloat(updateData.originalPrice);
     if (updateData.salePrice !== undefined) updateData.salePrice = parseFloat(updateData.salePrice);
     if (updateData.discount !== undefined) updateData.discount = parseFloat(updateData.discount);

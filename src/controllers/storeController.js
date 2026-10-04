@@ -17,8 +17,8 @@ export const getStores = async (req, res) => {
 
 export const createStore = async (req, res) => {
   try {
-    const { name, slug, logoUrl } = req.body;
-    const storeSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now();
+    const { name, logoUrl } = req.body;
+    const storeSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     let finalLogoUrl = logoUrl;
     if (logoUrl && logoUrl.startsWith('data:image')) {
       finalLogoUrl = await uploadToCloudinary(logoUrl, 'stores');
@@ -41,7 +41,7 @@ export const createStore = async (req, res) => {
 export const updateStore = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, slug, logoUrl } = req.body;
+    const { name, logoUrl } = req.body;
     
     let finalLogoUrl = logoUrl;
     if (logoUrl && logoUrl.startsWith('data:image')) {
@@ -49,13 +49,12 @@ export const updateStore = async (req, res) => {
     }
 
     const updateData = {};
-    if (name) updateData.name = name;
+    if (name) {
+      updateData.name = name;
+      updateData.slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    }
     if (logoUrl !== undefined) {
       updateData.logoUrl = finalLogoUrl || null;
-    }
-
-    if (slug) {
-      updateData.slug = slug;
     }
 
     const store = await prisma.store.update({

@@ -22,8 +22,8 @@ export const getCategories = async (req, res) => {
 
 export const createCategory = async (req, res) => {
   try {
-    const { name, slug } = req.body;
-    const categorySlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now();
+    const { name } = req.body;
+    const categorySlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     
     let imageUrl = null;
     if (req.file) {
@@ -47,11 +47,13 @@ export const createCategory = async (req, res) => {
 export const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, slug } = req.body;
+    const { name } = req.body;
     
     const updateData = {};
-    if (name) updateData.name = name;
-    if (slug) updateData.slug = slug;
+    if (name) {
+      updateData.name = name;
+      updateData.slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    }
     
     if (req.file) {
       updateData.image = await uploadToCloudinary(req.file.buffer, 'categories');
