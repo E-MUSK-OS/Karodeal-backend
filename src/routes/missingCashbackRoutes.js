@@ -6,7 +6,7 @@ import { submitTicket, getUserTickets, getAllTickets, updateTicketStatus, update
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit per file
 });

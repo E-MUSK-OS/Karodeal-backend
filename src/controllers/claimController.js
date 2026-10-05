@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 export const submitClaim = async (req, res) => {
   try {
     const { storeName, productId, orderId, orderAmount, orderDate } = req.body;
-    
+
     // Check if files exist
     if (!req.files || !req.files.invoice || !req.files.review || !req.files.noReturn) {
       return res.status(400).json({ error: 'Invoice, Review, and No-Return screenshots are required.' });
@@ -57,9 +57,9 @@ export const getUserClaims = async (req, res) => {
       where: { userId: req.userId },
       select: { orderId: true }
     });
-    
+
     const ticketOrderIds = new Set(tickets.map(t => t.orderId));
-    
+
     const claimsWithTicketStatus = claims.map(claim => ({
       ...claim,
       hasMissingTicket: ticketOrderIds.has(claim.orderId)
@@ -200,7 +200,7 @@ export const updateAwardedCashback = async (req, res) => {
       // 1. Update the claim
       await tx.cashbackClaim.update({
         where: { id },
-        data: { 
+        data: {
           awardedCashback: cashbackAmt,
           adminNote: adminNote !== undefined ? adminNote : existingClaim.adminNote
         }

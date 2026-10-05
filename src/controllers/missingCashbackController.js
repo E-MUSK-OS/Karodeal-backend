@@ -172,7 +172,7 @@ export const addMessage = async (req, res) => {
   try {
     const ticket = await prisma.missingCashbackTicket.findUnique({ where: { id } });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    
+
     // Auth validation handled by routes
     if (sender === 'USER' && ticket.userId !== req.userId) {
       return res.status(403).json({ error: 'Forbidden' });
@@ -208,7 +208,7 @@ export const addMessage = async (req, res) => {
  */
 export const markUserRead = async (req, res) => {
   const { id } = req.params;
-  
+
   try {
     await prisma.missingCashbackTicket.update({
       where: { id, userId: req.userId },
@@ -226,7 +226,7 @@ export const markUserRead = async (req, res) => {
  */
 export const markAdminRead = async (req, res) => {
   const { id } = req.params;
-  
+
   try {
     await prisma.missingCashbackTicket.update({
       where: { id },
