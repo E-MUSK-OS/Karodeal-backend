@@ -52,7 +52,9 @@ export const deleteFromCloudinary = async (imageUrl) => {
       const publicIdWithExt = publicIdPath.join('/');
       const publicId = publicIdWithExt.split('.').slice(0, -1).join('.');
       
-      await cloudinary.uploader.destroy(publicId);
+      console.log('Attempting to delete Cloudinary publicId:', publicId);
+      const result = await cloudinary.uploader.destroy(publicId, { invalidate: true });
+      console.log('Cloudinary destroy result:', result);
     }
   } catch (error) {
     console.error('Error deleting from Cloudinary:', error);

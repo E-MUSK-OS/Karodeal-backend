@@ -49,7 +49,7 @@ export const getUserClaims = async (req, res) => {
   try {
     const claims = await prisma.cashbackClaim.findMany({
       where: { userId: req.userId },
-      include: { product: { select: { id: true, title: true, image: true, slug: true } } },
+      include: { product: { select: { id: true, title: true, image: true, slug: true, originalPrice: true, salePrice: true, cashback: true } } },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -77,7 +77,7 @@ export const getAllClaims = async (req, res) => {
     const claims = await prisma.cashbackClaim.findMany({
       include: {
         user: { select: { name: true, email: true, mobile: true } },
-        product: { select: { id: true, title: true, image: true, slug: true } }
+        product: { select: { id: true, title: true, image: true, slug: true, originalPrice: true, salePrice: true, cashback: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
