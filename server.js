@@ -10,6 +10,7 @@ import payoutRoutes from './src/routes/payoutRoutes.js';
 import missingCashbackRoutes from './src/routes/missingCashbackRoutes.js';
 import claimRoutes from './src/routes/claimRoutes.js';
 import transactionRoutes from './src/routes/transactionRoutes.js';
+import adminRoutes from './src/routes/adminRoutes.js';
 import { initCronJobs } from './src/utils/cronJobs.js';
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -43,6 +44,7 @@ app.use('/api/payouts', payoutRoutes);
 app.use('/api/missing-cashback', missingCashbackRoutes);
 app.use('/api/claims', claimRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/admin', adminRoutes);
 
 if (!process.env.VERCEL) {
   initCronJobs();

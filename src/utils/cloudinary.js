@@ -34,3 +34,27 @@ export const uploadToCloudinary = async (file, folder = 'karodeal') => {
     });
   });
 };
+
+/**
+ * Deletes an image from Cloudinary using its URL
+ * @param {string} imageUrl - The secure URL of the image
+ */
+export const deleteFromCloudinary = async (imageUrl) => {
+  if (!imageUrl) return;
+  try {
+    const parts = imageUrl.split('/');
+    const uploadIndex = parts.indexOf('upload');
+    if (uploadIndex !== -1) {
+      let publicIdPath = parts.slice(uploadIndex + 1);
+      if (publicIdPath[0].startsWith('v') && !isNaN(publicIdPath[0].slice(1))) {
+        publicIdPath.shift();
+      }
+      const publicIdWithExt = publicIdPath.join('/');
+      const publicId = publicIdWithExt.split('.').slice(0, -1).join('.');
+      
+      await cloudinary.uploader.destroy(publicId);
+    }
+  } catch (error) {
+    console.error('Error deleting from Cloudinary:', error);
+  }
+};

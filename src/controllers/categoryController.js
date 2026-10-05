@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
 
 const prisma = new PrismaClient();
 
@@ -49,6 +49,11 @@ export const updateCategory = async (req, res) => {
     const { id } = req.params;
     const { name } = req.body;
     
+    const existingCategory = await prisma.category.findUnique({ where: { id: id } });
+    if (!existingCategory) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
     const updateData = {};
     if (name) {
       updateData.name = name;
@@ -57,6 +62,9 @@ export const updateCategory = async (req, res) => {
     
     if (req.file) {
       updateData.image = await uploadToCloudinary(req.file.buffer, 'categories');
+      if (existingCategory.image && existingCategory.image.includes('cloudinary.com')) {
+        await deleteFromCloudinary(existingCategory.image);
+      }
     }
 
     const category = await prisma.category.update({
@@ -79,6 +87,19 @@ export const deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
     const categoryId = id;
+
+    const existingCategory = await prisma.category.findUnique({ where: { id: categoryId } });
+    if (existingCategory && existingCategory.image && existingCategory.image.includes('cloudinary.com')) {
+      await deleteFromCloudinary(existingCategory.image);
+    }
+
+    // Delete associated products' images
+    const productsToDelete = await prisma.product.findMany({ where: { categoryId: categoryId } });
+    for (const product of productsToDelete) {
+      if (product.image && product.image.includes('cloudinary.com')) {
+        await deleteFromCloudinary(product.image);
+      }
+    }
 
     // Delete associated products first to avoid foreign key constraint errors
     await prisma.product.deleteMany({

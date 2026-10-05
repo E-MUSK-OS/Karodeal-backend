@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
 
 const prisma = new PrismaClient();
 
@@ -43,9 +43,21 @@ export const updateStore = async (req, res) => {
     const { id } = req.params;
     const { name, logoUrl } = req.body;
     
-    let finalLogoUrl = logoUrl;
-    if (logoUrl && logoUrl.startsWith('data:image')) {
-      finalLogoUrl = await uploadToCloudinary(logoUrl, 'stores');
+    const existingStore = await prisma.store.findUnique({ where: { id: id } });
+    if (!existingStore) {
+      return res.status(404).json({ error: 'Store not found' });
+    }
+
+    let finalLogoUrl = existingStore.logoUrl;
+    if (logoUrl !== undefined && logoUrl !== existingStore.logoUrl) {
+      if (logoUrl && logoUrl.startsWith('data:image')) {
+        finalLogoUrl = await uploadToCloudinary(logoUrl, 'stores');
+      } else {
+        finalLogoUrl = logoUrl;
+      }
+      if (existingStore.logoUrl && existingStore.logoUrl.includes('cloudinary.com')) {
+        await deleteFromCloudinary(existingStore.logoUrl);
+      }
     }
 
     const updateData = {};
@@ -72,6 +84,19 @@ export const deleteStore = async (req, res) => {
   try {
     const { id } = req.params;
     const storeId = id;
+
+    const existingStore = await prisma.store.findUnique({ where: { id: storeId } });
+    if (existingStore && existingStore.logoUrl && existingStore.logoUrl.includes('cloudinary.com')) {
+      await deleteFromCloudinary(existingStore.logoUrl);
+    }
+
+    // Delete associated products' images
+    const productsToDelete = await prisma.product.findMany({ where: { storeId: storeId } });
+    for (const product of productsToDelete) {
+      if (product.image && product.image.includes('cloudinary.com')) {
+        await deleteFromCloudinary(product.image);
+      }
+    }
 
     // Delete associated products first to avoid foreign key constraint errors
     await prisma.product.deleteMany({

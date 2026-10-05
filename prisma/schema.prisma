@@ -68,6 +68,9 @@ model Transaction {
   orderId     String?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([status])
 }
 
 /// Stores OTPs for email/mobile verification purposes
@@ -95,9 +98,14 @@ model Product {
   cashback      Float?
   affiliateUrl  String
   isTrending    Boolean  @default(false)
+  isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   cashbackClaims CashbackClaim[]
+
+  @@index([storeId])
+  @@index([categoryId])
+  @@index([isTrending])
 }
 
 /// Represents an e-commerce platform or store (e.g., Amazon, Flipkart)
@@ -144,6 +152,9 @@ model PayoutRequest {
   status         PayoutStatus @default(PENDING)
   adminNote      String?
   createdAt      DateTime     @default(now())
+
+  @@index([userId])
+  @@index([status])
 }
 
 enum TicketStatus {
@@ -172,6 +183,9 @@ model MissingCashbackTicket {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
 }
 
 /// Represents a single message in a ticket's conversation thread
@@ -211,4 +225,8 @@ model CashbackClaim {
   awardedCashback    Float?
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([productId])
+  @@index([status])
 }

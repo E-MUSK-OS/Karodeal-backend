@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
 
 const prisma = new PrismaClient();
 
@@ -7,13 +7,34 @@ const prisma = new PrismaClient();
 export const getProducts = async (req, res) => {
   try {
     const products = await prisma.product.findMany({
+      where: { isActive: true },
       orderBy: { createdAt: 'desc' },
-      include: { storeRel: true, categoryRel: true }
+      include: { 
+        storeRel: { select: { id: true, name: true, logoUrl: true, slug: true } }, 
+        categoryRel: { select: { id: true, name: true, slug: true } } 
+      }
     });
     res.json(products);
   } catch (error) {
     console.error('Error fetching products:', error);
     res.status(500).json({ error: 'Failed to fetch products' });
+  }
+};
+
+// Get all products (Admin only - includes inactive)
+export const getAdminProducts = async (req, res) => {
+  try {
+    const products = await prisma.product.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { 
+        storeRel: { select: { id: true, name: true, logoUrl: true, slug: true } }, 
+        categoryRel: { select: { id: true, name: true, slug: true } } 
+      }
+    });
+    res.json(products);
+  } catch (error) {
+    console.error('Error fetching admin products:', error);
+    res.status(500).json({ error: 'Failed to fetch admin products' });
   }
 };
 
@@ -23,7 +44,10 @@ export const getProductBySlug = async (req, res) => {
     const { slug } = req.params;
     const product = await prisma.product.findUnique({
       where: { slug },
-      include: { storeRel: true, categoryRel: true }
+      include: { 
+        storeRel: { select: { id: true, name: true, logoUrl: true, slug: true } }, 
+        categoryRel: { select: { id: true, name: true, slug: true } } 
+      }
     });
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
@@ -56,6 +80,7 @@ export const createProduct = async (req, res) => {
         cashback: productData.cashback ? parseFloat(productData.cashback) : null,
         affiliateUrl: productData.affiliateUrl,
         isTrending: productData.isTrending || false,
+        isActive: productData.isActive !== undefined ? productData.isActive : true,
       }
     });
     res.status(201).json(product);
@@ -81,6 +106,7 @@ export const updateProduct = async (req, res) => {
     if (updateData.salePrice !== undefined) updateData.salePrice = parseFloat(updateData.salePrice);
     if (updateData.discount !== undefined) updateData.discount = parseFloat(updateData.discount);
     if (updateData.cashback !== undefined) updateData.cashback = updateData.cashback !== null && updateData.cashback !== '' ? parseFloat(updateData.cashback) : null;
+    if (updateData.isActive !== undefined) updateData.isActive = Boolean(updateData.isActive);
     
     // Map relation fields to current schema
     if (updateData.store) {
@@ -92,8 +118,18 @@ export const updateProduct = async (req, res) => {
       delete updateData.category;
     }
 
-    if (updateData.image && updateData.image.startsWith('data:image')) {
-      updateData.image = await uploadToCloudinary(updateData.image, 'products');
+    const existingProduct = await prisma.product.findUnique({ where: { id: id } });
+    if (!existingProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    if (updateData.image && updateData.image !== existingProduct.image) {
+      if (updateData.image.startsWith('data:image')) {
+        updateData.image = await uploadToCloudinary(updateData.image, 'products');
+      }
+      if (existingProduct.image && existingProduct.image.includes('cloudinary.com')) {
+        await deleteFromCloudinary(existingProduct.image);
+      }
     }
 
     // Remove deprecated fields so Prisma doesn't throw errors
@@ -116,6 +152,12 @@ export const updateProduct = async (req, res) => {
 export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    const existingProduct = await prisma.product.findUnique({ where: { id: id } });
+    if (existingProduct && existingProduct.image && existingProduct.image.includes('cloudinary.com')) {
+      await deleteFromCloudinary(existingProduct.image);
+    }
+    
     await prisma.product.delete({
       where: { id: id }
     });

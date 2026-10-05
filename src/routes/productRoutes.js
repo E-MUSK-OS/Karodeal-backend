@@ -4,7 +4,8 @@ import {
   getProductBySlug, 
   createProduct, 
   updateProduct, 
-  deleteProduct 
+  deleteProduct,
+  getAdminProducts
 } from '../controllers/productController.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
@@ -15,6 +16,7 @@ router.get('/', getProducts);
 router.get('/:slug', getProductBySlug);
 
 // Admin-only routes
+router.get('/admin', requireAuth, requireAdmin, getAdminProducts);
 router.post('/', requireAuth, requireAdmin, createProduct);
 router.put('/:id', requireAuth, requireAdmin, updateProduct);
 router.delete('/:id', requireAuth, requireAdmin, deleteProduct);
