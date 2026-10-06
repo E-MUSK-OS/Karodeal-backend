@@ -16,6 +16,15 @@ export const submitClaim = async (req, res) => {
     const reviewScreenshot = await uploadToCloudinary(req.files.review[0].buffer, 'claims');
     const noReturnScreenshot = await uploadToCloudinary(req.files.noReturn[0].buffer, 'claims');
 
+    // Check if a claim for this Order ID already exists
+    const existingClaim = await prisma.cashbackClaim.findFirst({
+      where: { orderId }
+    });
+
+    if (existingClaim) {
+      return res.status(400).json({ error: 'A claim for this Order ID has already been submitted.' });
+    }
+
     // Generate 6-character random alphanumeric ticketId
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let ticketId = '';
