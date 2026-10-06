@@ -5,9 +5,11 @@ import {
   createProduct, 
   updateProduct, 
   deleteProduct,
-  getAdminProducts
+  deleteProduct,
+  getAdminProducts,
+  trackProductClick
 } from '../controllers/productController.js';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -20,5 +22,6 @@ router.delete('/:id', requireAuth, requireAdmin, deleteProduct);
 // Public routes (must be at the bottom to avoid matching /admin as a slug)
 router.get('/', getProducts);
 router.get('/:slug', getProductBySlug);
+router.post('/:id/click', optionalAuth, trackProductClick);
 
 export default router;

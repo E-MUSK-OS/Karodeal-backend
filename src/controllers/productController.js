@@ -167,3 +167,30 @@ export const deleteProduct = async (req, res) => {
     res.status(500).json({ error: 'Failed to delete product' });
   }
 };
+
+// Track a click on a product deal
+export const trackProductClick = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId || null;
+    // Use x-forwarded-for or connection remote address for IP
+    const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || null;
+
+    // Ensure product exists
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    await prisma.productClick.create({
+      data: {
+        productId: id,
+        userId: userId,
+        ipAddress: ipAddress
+      }
+    });
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Error tracking product click:', error);
+    res.status(500).json({ error: 'Failed to track product click' });
+  }
+};

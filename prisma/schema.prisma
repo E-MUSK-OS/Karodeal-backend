@@ -29,6 +29,7 @@ model User {
   payouts                PayoutRequest[]
   missingCashbackTickets MissingCashbackTicket[]
   cashbackClaims         CashbackClaim[]
+  productClicks          ProductClick[]
 }
 
 /// Represents a user's cashback and rewards wallet
@@ -102,6 +103,7 @@ model Product {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   cashbackClaims CashbackClaim[]
+  clicks         ProductClick[]
 
   @@index([storeId])
   @@index([categoryId])
@@ -229,4 +231,19 @@ model CashbackClaim {
   @@index([userId])
   @@index([productId])
   @@index([status])
+}
+
+
+/// Represents a record of a user (or guest) clicking on a product deal
+model ProductClick {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String?  // Null if guest
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress String?  // To track guest users loosely
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@index([userId])
 }
