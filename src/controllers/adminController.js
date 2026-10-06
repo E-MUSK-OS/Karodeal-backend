@@ -35,3 +35,20 @@ export const getAdminStats = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch admin stats' });
   }
 };
+
+// Get all product clicks
+export const getProductClicks = async (req, res) => {
+  try {
+    const clicks = await prisma.productClick.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { name: true, email: true } },
+        product: { select: { title: true, storeRel: { select: { name: true } } } }
+      }
+    });
+    res.json(clicks);
+  } catch (error) {
+    console.error('Error fetching product clicks:', error);
+    res.status(500).json({ error: 'Failed to fetch product clicks' });
+  }
+};
