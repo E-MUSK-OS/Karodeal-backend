@@ -18,6 +18,15 @@ export const submitTicket = async (req, res) => {
     orderScreenshots = await Promise.all(uploadPromises);
   }
 
+  // Check if a ticket for this Order ID already exists globally
+  const existingTicket = await prisma.missingCashbackTicket.findFirst({
+    where: { orderId }
+  });
+
+  if (existingTicket) {
+    return res.status(400).json({ error: 'A missing cashback ticket for this Order ID has already been submitted.' });
+  }
+
   // Generate 6-character random alphanumeric ticketId
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let ticketId = '';
