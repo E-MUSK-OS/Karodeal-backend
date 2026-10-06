@@ -5,7 +5,6 @@ import {
   createProduct, 
   updateProduct, 
   deleteProduct,
-  deleteProduct,
   getAdminProducts,
   trackProductClick
 } from '../controllers/productController.js';
