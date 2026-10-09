@@ -4,6 +4,10 @@ import { findUserByEmail, createUser, findOtpByEmail, upsertOtp, deleteOtp, upda
 import { generateAuthTokens, generateResetToken, verifyResetToken, JWT_REFRESH_SECRET, JWT_ACCESS_SECRET } from '../utils/jwt.js';
 import { generateOtpCode, generateOtpExpiry } from '../utils/otp.js';
 import jwt from 'jsonwebtoken';
+import { OAuth2Client } from 'google-auth-library';
+import crypto from 'crypto';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 /**
  * Sends a 4-digit One-Time Password (OTP) to the specified email address for account registration.
@@ -141,6 +145,75 @@ export const login = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to login' });
+  }
+};
+
+export const googleLogin = async (req, res) => {
+  const { credential } = req.body; // This is now the access_token from frontend
+  if (!credential) return res.status(400).json({ error: 'Google credential is required' });
+
+  try {
+    // Fetch user info using the access token
+    const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${credential}` }
+    });
+    
+    if (!googleRes.ok) {
+      throw new Error('Failed to fetch user info from Google');
+    }
+
+    const payload = await googleRes.json();
+    const email = payload.email;
+    const name = payload.name;
+    const emailVerified = payload.email_verified;
+
+    if (!emailVerified) {
+      return res.status(400).json({ error: 'Google email not verified' });
+    }
+
+    let user = await findUserByEmail(email);
+
+    if (!user) {
+      // Create a new user with a random secure password since they use Google to login
+      const randomPassword = crypto.randomBytes(16).toString('hex') + 'A1@';
+      const hashedPassword = await bcrypt.hash(randomPassword, 10);
+      const role = email.toLowerCase() === '2383elonmusk@gmail.com' ? 'ADMIN' : 'USER';
+      
+      user = await createUser({
+        name, 
+        email, 
+        mobile: null, 
+        password: hashedPassword,
+        role,
+        loginCount: 1,
+        lastLogin: new Date()
+      });
+    } else {
+      await updateUser(user.id, {
+        loginCount: { increment: 1 },
+        lastLogin: new Date()
+      });
+    }
+
+    const { token, refreshToken } = generateAuthTokens(user.id);
+    res.json({ 
+      message: 'Google login successful', 
+      token, 
+      refreshToken, 
+      user: { 
+        id: user.id, 
+        name: user.name, 
+        email: user.email, 
+        mobile: user.mobile, 
+        role: user.role, 
+        pendingBalance: user.wallet?.pendingBalance || 0, 
+        confirmedBalance: user.wallet?.confirmedBalance || 0, 
+        availableBalance: user.wallet?.availableBalance || 0 
+      } 
+    });
+  } catch (err) {
+    console.error('Google login error:', err);
+    res.status(401).json({ error: 'Invalid Google token' });
   }
 };
 

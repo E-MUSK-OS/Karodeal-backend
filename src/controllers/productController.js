@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
-
 const prisma = new PrismaClient();
 
 // Get all products
@@ -87,6 +86,52 @@ export const createProduct = async (req, res) => {
   } catch (error) {
     console.error('Error creating product:', error);
     res.status(500).json({ error: 'Failed to create product' });
+  }
+};
+
+// Create products in bulk (Admin only)
+export const createProductsBulk = async (req, res) => {
+  try {
+    const productsArray = req.body.products;
+    if (!Array.isArray(productsArray) || productsArray.length === 0) {
+      return res.status(400).json({ error: 'No products provided' });
+    }
+
+    const createdProducts = [];
+    
+    // Process one by one to handle potential data formatting issues and Cloudinary uploads if any
+    for (const productData of productsArray) {
+      let imageUrl = productData.image || '';
+      if (imageUrl && imageUrl.startsWith('data:image')) {
+        imageUrl = await uploadToCloudinary(imageUrl, 'products');
+      }
+
+      const slug = (productData.title || `custom-deal-${Date.now()}-${Math.floor(Math.random() * 1000)}`)
+                    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+      const product = await prisma.product.create({
+        data: {
+          slug: slug,
+          title: productData.title || `Custom Deal ${Date.now()}`,
+          storeId: productData.store || null,
+          categoryId: productData.category || null,
+          image: imageUrl,
+          originalPrice: parseFloat(productData.originalPrice) || 0,
+          salePrice: parseFloat(productData.salePrice) || 0,
+          discount: parseFloat(productData.discount) || 0,
+          cashback: productData.cashback !== undefined && productData.cashback !== '' ? parseFloat(productData.cashback) : null,
+          affiliateUrl: productData.affiliateUrl || '',
+          isTrending: productData.isTrending || false,
+          isActive: productData.isActive !== undefined ? productData.isActive : true,
+        }
+      });
+      createdProducts.push(product);
+    }
+
+    res.status(201).json({ success: true, count: createdProducts.length });
+  } catch (error) {
+    console.error('Error in bulk creating products:', error);
+    res.status(500).json({ error: 'Failed to bulk create products' });
   }
 };
 
@@ -194,3 +239,4 @@ export const trackProductClick = async (req, res) => {
     res.status(500).json({ error: 'Failed to track product click' });
   }
 };
+

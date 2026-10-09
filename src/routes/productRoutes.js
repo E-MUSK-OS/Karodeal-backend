@@ -2,7 +2,8 @@ import express from 'express';
 import { 
   getProducts, 
   getProductBySlug, 
-  createProduct, 
+  createProduct,
+  createProductsBulk,
   updateProduct, 
   deleteProduct,
   getAdminProducts,
@@ -14,6 +15,7 @@ const router = express.Router();
 
 // Admin-only routes
 router.get('/admin', requireAuth, requireAdmin, getAdminProducts);
+router.post('/bulk', requireAuth, requireAdmin, createProductsBulk);
 router.post('/', requireAuth, requireAdmin, createProduct);
 router.put('/:id', requireAuth, requireAdmin, updateProduct);
 router.delete('/:id', requireAuth, requireAdmin, deleteProduct);

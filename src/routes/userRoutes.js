@@ -1,11 +1,11 @@
 import express from 'express';
-import { sendOtp, sendResetOtp, verifyResetOtp, signup, login, getProfile, updateProfile, resetPassword, changePassword, verifyAdmin, getAllUsers, deleteUserAccount } from '../controllers/userController.js';
+import { sendOtp, sendResetOtp, verifyResetOtp, signup, login, googleLogin, getProfile, updateProfile, resetPassword, changePassword, verifyAdmin, getAllUsers, deleteUserAccount } from '../controllers/userController.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import rateLimit from 'express-rate-limit';
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 requests per windowMs
+  max: 20, // Temporarily increased to 50 for testing/development
   message: { error: 'Too many login attempts from this IP, please try again after 15 minutes' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -17,6 +17,7 @@ router.post('/send-otp', loginLimiter, sendOtp);
 router.post('/send-reset-otp', loginLimiter, sendResetOtp);
 router.post('/signup', signup);
 router.post('/login', loginLimiter, login);
+router.post('/google', loginLimiter, googleLogin);
 router.post('/verify-reset-otp', verifyResetOtp);
 router.post('/reset-password', resetPassword);
 
