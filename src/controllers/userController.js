@@ -10,7 +10,7 @@ import crypto from 'crypto';
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 /**
- * Sends a 4-digit One-Time Password (OTP) to the specified email address for account registration.
+ * Sends a 6-digit One-Time Password (OTP) to the specified email address for account registration.
  * Ensures that the email is not already registered before sending.
  */
 export const sendOtp = async (req, res) => {
@@ -27,12 +27,27 @@ export const sendOtp = async (req, res) => {
     await upsertOtp(email, code, expiresAt);
 
     if (transporter) {
+      const emailText = `Hi there,\n\nWe received a request to log in to your KaroDeal account.\n\nYour One-Time Password (OTP) is:\n\n${code}\n\nThis code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.\n\nIf you did not request this login, please ignore this email or contact our support team immediately.\n\nBest regards,\n\nThe KaroDeal Team`;
+      
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <p>Hi there,</p>
+          <p>We received a request to log in to your KaroDeal account.</p>
+          <p>Your One-Time Password (OTP) is:</p>
+          <h2 style="font-size: 28px; font-weight: bold; color: #000; letter-spacing: 2px;">${code}</h2>
+          <p>This code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.</p>
+          <p>If you did not request this login, please ignore this email or contact our support team immediately.</p>
+          <br>
+          <p>Best regards,<br><strong>The KaroDeal Team</strong></p>
+        </div>
+      `;
+
       await transporter.sendMail({
-        from: '"Karodeal Auth" <2383elonmusk@gmail.com>',
+        from: '"Karodeal Auth" <karodeal26@gmail.com>',
         to: email,
-        subject: 'Your Verification Code',
-        text: `Your code is: ${code}`,
-        html: `<b>Your verification code is: ${code}</b>`
+        subject: `Your KaroDeal verification code is ${code}`,
+        text: emailText,
+        html: emailHtml
       });
     }
 
@@ -44,7 +59,7 @@ export const sendOtp = async (req, res) => {
 };
 
 /**
- * Sends a 4-digit One-Time Password (OTP) to the specified email address for password recovery.
+ * Sends a 6-digit One-Time Password (OTP) to the specified email address for password recovery.
  * Verifies that the email exists in the database before sending.
  */
 export const sendResetOtp = async (req, res) => {
@@ -61,12 +76,27 @@ export const sendResetOtp = async (req, res) => {
     await upsertOtp(email, code, expiresAt);
 
     if (transporter) {
+      const emailText = `Hi ${existingUser.name || 'there'},\n\nWe received a request to reset the password for your KaroDeal account.\n\nYour One-Time Password (OTP) for password reset is:\n\n${code}\n\nThis code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.\n\nIf you did not request a password reset, please ignore this email or contact our support team immediately.\n\nBest regards,\n\nThe KaroDeal Team`;
+      
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <p>Hi ${existingUser.name || 'there'},</p>
+          <p>We received a request to reset the password for your KaroDeal account.</p>
+          <p>Your One-Time Password (OTP) for password reset is:</p>
+          <h2 style="font-size: 28px; font-weight: bold; color: #000; letter-spacing: 2px;">${code}</h2>
+          <p>This code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.</p>
+          <p>If you did not request a password reset, please ignore this email or contact our support team immediately.</p>
+          <br>
+          <p>Best regards,<br><strong>The KaroDeal Team</strong></p>
+        </div>
+      `;
+
       await transporter.sendMail({
-        from: '"Karodeal Auth" <2383elonmusk@gmail.com>',
+        from: '"Karodeal Auth" <karodeal26@gmail.com>',
         to: email,
-        subject: 'Password Reset Verification Code',
-        text: `Your password reset code is: ${code}`,
-        html: `<b>Your password reset code is: ${code}</b>`
+        subject: `Your KaroDeal password reset code is ${code}`,
+        text: emailText,
+        html: emailHtml
       });
     }
 
@@ -149,7 +179,7 @@ export const login = async (req, res) => {
 };
 
 export const googleLogin = async (req, res) => {
-  const { credential } = req.body; // This is now the access_token from frontend
+  const { credential, isSignup } = req.body; // credential is the access_token from frontend
   if (!credential) return res.status(400).json({ error: 'Google credential is required' });
 
   try {
@@ -159,12 +189,14 @@ export const googleLogin = async (req, res) => {
     });
     
     if (!googleRes.ok) {
+      const errorText = await googleRes.text();
+      console.error('Google API Error Response:', googleRes.status, errorText, 'Credential sent:', credential);
       throw new Error('Failed to fetch user info from Google');
     }
 
     const payload = await googleRes.json();
     const email = payload.email;
-    const name = payload.name;
+    const name = payload.name || payload.given_name || email.split('@')[0];
     const emailVerified = payload.email_verified;
 
     if (!emailVerified) {
@@ -173,14 +205,104 @@ export const googleLogin = async (req, res) => {
 
     let user = await findUserByEmail(email);
 
+    if (isSignup) {
+      if (user) {
+        return res.status(400).json({ error: 'Email already registered. Please log in.' });
+      }
+
+      // Generate 6-digit OTP
+      const code = generateOtpCode();
+      const expiresAt = generateOtpExpiry(10);
+      
+      // Store OTP in database
+      await upsertOtp(email, code, expiresAt);
+
+      // Send OTP via email
+      if (transporter) {
+        const emailText = `Hi ${name},\n\nWe received a request to create your KaroDeal account using Google.\n\nYour One-Time Password (OTP) is:\n\n${code}\n\nThis code is valid for the next 10 minutes.\n\nBest regards,\n\nThe KaroDeal Team`;
+        
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <p>Hi ${name},</p>
+            <p>We received a request to create your KaroDeal account using Google.</p>
+            <p>Your One-Time Password (OTP) is:</p>
+            <h2 style="font-size: 28px; font-weight: bold; color: #000; letter-spacing: 2px;">${code}</h2>
+            <p>This code is valid for the next 10 minutes. For your security, please do not share this code with anyone.</p>
+            <br>
+            <p>Best regards,<br><strong>The KaroDeal Team</strong></p>
+          </div>
+        `;
+
+        await transporter.sendMail({
+          from: '"Karodeal Auth" <karodeal26@gmail.com>',
+          to: email,
+          subject: `Your KaroDeal Google Signup verification code is ${code}`,
+          text: emailText,
+          html: emailHtml
+        });
+      }
+
+      // Respond with requireOtp: true, so frontend knows it must show OTP screen
+      return res.json({ 
+        requireOtp: true,
+        email,
+        name,
+        message: 'OTP sent to your email for Google Signup verification.' 
+      });
+    } else {
+      // Login flow
+      if (!user) {
+        return res.status(400).json({ error: 'User not registered. Please Sign Up first.' });
+      }
+
+      // Existing user, log them in directly
+      await updateUser(user.id, {
+        loginCount: { increment: 1 },
+        lastLogin: new Date()
+      });
+
+      const { token, refreshToken } = generateAuthTokens(user.id);
+      return res.json({ 
+        message: 'Google login successful', 
+        token, 
+        refreshToken, 
+        user: { 
+          id: user.id, 
+          name: user.name, 
+          email: user.email, 
+          mobile: user.mobile, 
+          role: user.role, 
+          pendingBalance: user.wallet?.pendingBalance || 0, 
+          confirmedBalance: user.wallet?.confirmedBalance || 0, 
+          availableBalance: user.wallet?.availableBalance || 0 
+        } 
+      });
+    }
+  } catch (err) {
+    console.error('Google auth error:', err);
+    res.status(401).json({ error: 'Invalid Google token' });
+  }
+};
+
+export const verifyGoogleOtp = async (req, res) => {
+  const { email, otp, name } = req.body;
+  if (!email || !otp) return res.status(400).json({ error: 'Email and OTP are required' });
+
+  try {
+    const otpRecord = await findOtpByEmail(email);
+    if (!otpRecord) return res.status(400).json({ error: 'No OTP found for this email' });
+    if (otpRecord.otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
+    if (new Date() > otpRecord.expiresAt) return res.status(400).json({ error: 'OTP has expired' });
+
+    let user = await findUserByEmail(email);
     if (!user) {
-      // Create a new user with a random secure password since they use Google to login
+      // Create user after successful OTP verification
       const randomPassword = crypto.randomBytes(16).toString('hex') + 'A1@';
       const hashedPassword = await bcrypt.hash(randomPassword, 10);
       const role = email.toLowerCase() === '2383elonmusk@gmail.com' ? 'ADMIN' : 'USER';
       
       user = await createUser({
-        name, 
+        name: name || email.split('@')[0], 
         email, 
         mobile: null, 
         password: hashedPassword,
@@ -188,16 +310,13 @@ export const googleLogin = async (req, res) => {
         loginCount: 1,
         lastLogin: new Date()
       });
-    } else {
-      await updateUser(user.id, {
-        loginCount: { increment: 1 },
-        lastLogin: new Date()
-      });
     }
+
+    await deleteOtp(email); // Clean up
 
     const { token, refreshToken } = generateAuthTokens(user.id);
     res.json({ 
-      message: 'Google login successful', 
+      message: 'Google signup successful', 
       token, 
       refreshToken, 
       user: { 
@@ -212,8 +331,8 @@ export const googleLogin = async (req, res) => {
       } 
     });
   } catch (err) {
-    console.error('Google login error:', err);
-    res.status(401).json({ error: 'Invalid Google token' });
+    console.error(err);
+    res.status(500).json({ error: 'Failed to verify Google OTP' });
   }
 };
 

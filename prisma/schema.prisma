@@ -247,3 +247,20 @@ model ProductClick {
   @@index([productId])
   @@index([userId])
 }
+
+/// Represents a user who has subscribed to the newsletter
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
+
+/// Represents a message submitted through the Contact Us form
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

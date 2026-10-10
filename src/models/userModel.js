@@ -41,7 +41,15 @@ export const updateUser = async (id, data) => {
 };
 
 export const deleteUser = async (id) => {
-  return await prisma.user.delete({ where: { id } });
+  return await prisma.$transaction([
+    prisma.wallet.deleteMany({ where: { userId: id } }),
+    prisma.transaction.deleteMany({ where: { userId: id } }),
+    prisma.payoutRequest.deleteMany({ where: { userId: id } }),
+    prisma.missingCashbackTicket.deleteMany({ where: { userId: id } }),
+    prisma.cashbackClaim.deleteMany({ where: { userId: id } }),
+    prisma.productClick.deleteMany({ where: { userId: id } }),
+    prisma.user.delete({ where: { id } })
+  ]);
 };
 
 export const findOtpByEmail = async (email) => {

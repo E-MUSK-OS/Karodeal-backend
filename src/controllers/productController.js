@@ -98,6 +98,7 @@ export const createProductsBulk = async (req, res) => {
     }
 
     const createdProducts = [];
+    let skippedCount = 0;
     
     // Process one by one to handle potential data formatting issues and Cloudinary uploads if any
     for (const productData of productsArray) {
@@ -106,15 +107,47 @@ export const createProductsBulk = async (req, res) => {
         imageUrl = await uploadToCloudinary(imageUrl, 'products');
       }
 
-      const slug = (productData.title || `custom-deal-${Date.now()}-${Math.floor(Math.random() * 1000)}`)
-                    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const baseSlug = (productData.title || `custom-deal`).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const slug = `${baseSlug}-${Math.random().toString(36).substring(2, 8)}`;
+
+      // If store or category is completely missing, fetch first available as fallback to avoid null constraint errors
+      let finalStoreId = productData.store;
+      let finalCategoryId = productData.category;
+
+      if (!finalStoreId) {
+        const firstStore = await prisma.store.findFirst();
+        finalStoreId = firstStore ? firstStore.id : null;
+      }
+      if (!finalCategoryId) {
+        const firstCat = await prisma.category.findFirst();
+        finalCategoryId = firstCat ? firstCat.id : null;
+      }
+
+      if (!finalStoreId || !finalCategoryId) {
+         return res.status(400).json({ error: 'You must have at least one Store and Category created in the system before importing products.' });
+      }
+
+      const productTitle = productData.title || `Custom Deal ${Date.now()}`;
+
+      // Check for duplicate product (same title and store)
+      const existingProduct = await prisma.product.findFirst({
+        where: {
+          title: productTitle,
+          storeId: finalStoreId
+        }
+      });
+
+      if (existingProduct) {
+        skippedCount++;
+        continue;
+      }
 
       const product = await prisma.product.create({
         data: {
           slug: slug,
-          title: productData.title || `Custom Deal ${Date.now()}`,
-          storeId: productData.store || null,
-          categoryId: productData.category || null,
+          title: productTitle,
+          storeId: finalStoreId,
+          categoryId: finalCategoryId,
           image: imageUrl,
           originalPrice: parseFloat(productData.originalPrice) || 0,
           salePrice: parseFloat(productData.salePrice) || 0,
@@ -128,7 +161,7 @@ export const createProductsBulk = async (req, res) => {
       createdProducts.push(product);
     }
 
-    res.status(201).json({ success: true, count: createdProducts.length });
+    res.status(201).json({ success: true, count: createdProducts.length, skippedCount });
   } catch (error) {
     console.error('Error in bulk creating products:', error);
     res.status(500).json({ error: 'Failed to bulk create products' });
