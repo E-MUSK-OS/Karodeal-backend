@@ -5,8 +5,20 @@ const prisma = new PrismaClient();
 // Get all products
 export const getProducts = async (req, res) => {
   try {
+    const now = new Date();
+    await prisma.product.updateMany({
+      where: { isActive: true, expiresAt: { not: null, lte: now } },
+      data: { isActive: false }
+    }).catch(() => {});
+
     const products = await prisma.product.findMany({
-      where: { isActive: true },
+      where: { 
+        isActive: true,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: now } }
+        ]
+      },
       orderBy: { createdAt: 'desc' },
       include: { 
         storeRel: { select: { id: true, name: true, logoUrl: true, slug: true } }, 
@@ -23,6 +35,12 @@ export const getProducts = async (req, res) => {
 // Get all products (Admin only - includes inactive)
 export const getAdminProducts = async (req, res) => {
   try {
+    const now = new Date();
+    await prisma.product.updateMany({
+      where: { isActive: true, expiresAt: { not: null, lte: now } },
+      data: { isActive: false }
+    }).catch(() => {});
+
     const products = await prisma.product.findMany({
       orderBy: { createdAt: 'desc' },
       include: { 
@@ -48,8 +66,8 @@ export const getProductBySlug = async (req, res) => {
         categoryRel: { select: { id: true, name: true, slug: true } } 
       }
     });
-    if (!product) {
-      return res.status(404).json({ error: 'Product not found' });
+    if (!product || !product.isActive || (product.expiresAt && product.expiresAt <= new Date())) {
+      return res.status(404).json({ error: 'Product not found or inactive' });
     }
     res.json(product);
   } catch (error) {
@@ -80,6 +98,7 @@ export const createProduct = async (req, res) => {
         affiliateUrl: productData.affiliateUrl,
         isTrending: productData.isTrending || false,
         isActive: productData.isActive !== undefined ? productData.isActive : true,
+        expiresAt: productData.expiresAt ? new Date(productData.expiresAt) : null,
       }
     });
     res.status(201).json(product);
@@ -185,6 +204,19 @@ export const updateProduct = async (req, res) => {
     if (updateData.discount !== undefined) updateData.discount = parseFloat(updateData.discount);
     if (updateData.cashback !== undefined) updateData.cashback = updateData.cashback !== null && updateData.cashback !== '' ? parseFloat(updateData.cashback) : null;
     if (updateData.isActive !== undefined) updateData.isActive = Boolean(updateData.isActive);
+    if (updateData.expiresAt !== undefined) {
+      updateData.expiresAt = updateData.expiresAt ? new Date(updateData.expiresAt) : null;
+    }
+
+    // Support reposting action: reactivates, refreshes timestamp to appear at top of listings, and clears past expiration
+    if (updateData.repost) {
+      updateData.isActive = true;
+      updateData.createdAt = new Date();
+      if (!updateData.expiresAt || new Date(updateData.expiresAt) <= new Date()) {
+        updateData.expiresAt = null;
+      }
+      delete updateData.repost;
+    }
     
     // Map relation fields to current schema
     if (updateData.store) {
@@ -199,6 +231,13 @@ export const updateProduct = async (req, res) => {
     const existingProduct = await prisma.product.findUnique({ where: { id: id } });
     if (!existingProduct) {
       return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // If activating an expired product without providing a new expiry, clear past expiration
+    if (updateData.isActive === true && updateData.expiresAt === undefined) {
+      if (existingProduct.expiresAt && existingProduct.expiresAt <= new Date()) {
+        updateData.expiresAt = null;
+      }
     }
 
     if (updateData.image && updateData.image !== existingProduct.image) {

@@ -29,5 +29,30 @@ export const initCronJobs = () => {
     }
   });
 
-  console.log('[Cron] Background cleanup jobs initialized (runs every hour).');
+  // Auto-deactivate expired product cards every minute
+  cron.schedule('* * * * *', async () => {
+    try {
+      const now = new Date();
+      const result = await prisma.product.updateMany({
+        where: {
+          isActive: true,
+          expiresAt: {
+            not: null,
+            lte: now
+          }
+        },
+        data: {
+          isActive: false
+        }
+      });
+      if (result.count > 0) {
+        console.log(`[Cron] Auto-deactivated ${result.count} expired product card(s).`);
+      }
+    } catch (error) {
+      console.error('[Cron] Error auto-deactivating expired products:', error);
+    }
+  });
+
+  console.log('[Cron] Background cleanup & auto-deactivation jobs initialized.');
 };
+
