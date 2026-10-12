@@ -83,10 +83,18 @@ export const getUserClaims = async (req, res) => {
 
 export const getAllClaims = async (req, res) => {
   try {
+    const where = {};
+    if (req.userRole === 'SUB_ADMIN') {
+      where.product = {
+        createdById: req.userId
+      };
+    }
+
     const claims = await prisma.cashbackClaim.findMany({
+      where,
       include: {
         user: { select: { name: true, email: true, mobile: true } },
-        product: { select: { id: true, title: true, image: true, slug: true, originalPrice: true, salePrice: true, cashback: true } }
+        product: { select: { id: true, title: true, image: true, slug: true, originalPrice: true, salePrice: true, cashback: true, createdById: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -111,25 +119,42 @@ export const updateClaimStatus = async (req, res) => {
       return res.status(404).json({ error: 'Claim not found' });
     }
 
-    if (existingClaim.status !== 'PENDING' && !(existingClaim.status === 'REJECTED' && status === 'PENDING')) {
-      return res.status(400).json({ error: 'Claim is already processed' });
+    if (req.userRole === 'SUB_ADMIN') {
+      if (!existingClaim.product || existingClaim.product.createdById !== req.userId) {
+        return res.status(403).json({ error: 'Forbidden: You can only manage claims for products you created.' });
+      }
     }
 
-    const updateData = { status, adminNote: adminNote !== undefined ? adminNote : existingClaim.adminNote };
+    if (existingClaim.status !== 'PENDING') {
+      return res.status(400).json({ error: 'Claim has already been processed. Once approved or rejected, it cannot be modified.' });
+    }
 
-    if (status === 'APPROVED' && awardedCashback) {
+    if (!['APPROVED', 'REJECTED'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid claim status' });
+    }
+
+    if (status === 'REJECTED' && (!adminNote || !adminNote.trim())) {
+      return res.status(400).json({ error: 'Admin note / reason is compulsory when rejecting a claim.' });
+    }
+
+    const trimmedAdminNote = adminNote && adminNote.trim() ? adminNote.trim() : null;
+
+    if (status === 'APPROVED') {
       const cashbackAmt = parseFloat(awardedCashback);
       if (isNaN(cashbackAmt) || cashbackAmt <= 0) {
-        return res.status(400).json({ error: 'Invalid cashback amount' });
+        return res.status(400).json({ error: 'Valid cashback amount is required for approval.' });
       }
-      updateData.awardedCashback = cashbackAmt;
 
       // Update wallet in transaction
       await prisma.$transaction(async (tx) => {
         // Update claim
         await tx.cashbackClaim.update({
           where: { id },
-          data: updateData
+          data: {
+            status: 'APPROVED',
+            adminNote: trimmedAdminNote,
+            awardedCashback: cashbackAmt
+          }
         });
 
         // Update Wallet
@@ -162,10 +187,13 @@ export const updateClaimStatus = async (req, res) => {
 
       return res.json({ success: true, message: 'Claim approved and wallet updated' });
     } else {
-      // Just update status (e.g., REJECTED)
+      // Just update status to REJECTED
       const claim = await prisma.cashbackClaim.update({
         where: { id },
-        data: updateData
+        data: {
+          status: 'REJECTED',
+          adminNote: trimmedAdminNote
+        }
       });
       return res.json({ success: true, claim });
     }
@@ -176,72 +204,5 @@ export const updateClaimStatus = async (req, res) => {
 };
 
 export const updateAwardedCashback = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { newAwardedCashback, adminNote } = req.body;
-
-    const cashbackAmt = parseFloat(newAwardedCashback);
-    if (isNaN(cashbackAmt) || cashbackAmt <= 0) {
-      return res.status(400).json({ error: 'Invalid cashback amount' });
-    }
-
-    const existingClaim = await prisma.cashbackClaim.findUnique({
-      where: { id },
-      include: { user: true }
-    });
-
-    if (!existingClaim) {
-      return res.status(404).json({ error: 'Claim not found' });
-    }
-
-    if (existingClaim.status !== 'APPROVED') {
-      return res.status(400).json({ error: 'Only approved claims can have their cashback amount edited.' });
-    }
-
-    const oldCashbackAmt = existingClaim.awardedCashback || 0;
-    const difference = cashbackAmt - oldCashbackAmt;
-
-    if (difference === 0) {
-      return res.json({ success: true, message: 'No change in amount' });
-    }
-
-    await prisma.$transaction(async (tx) => {
-      // 1. Update the claim
-      await tx.cashbackClaim.update({
-        where: { id },
-        data: {
-          awardedCashback: cashbackAmt,
-          adminNote: adminNote !== undefined ? adminNote : existingClaim.adminNote
-        }
-      });
-
-      // 2. Adjust the wallet by the difference
-      await tx.wallet.update({
-        where: { userId: existingClaim.userId },
-        data: {
-          confirmedBalance: { increment: difference },
-          availableBalance: { increment: difference }
-        }
-      });
-
-      // 3. Create a correction transaction
-      await tx.transaction.create({
-        data: {
-          userId: existingClaim.userId,
-          amount: difference,
-          type: 'BONUS',
-          status: 'CONFIRMED',
-          description: `Cashback Correction for Order #${existingClaim.orderId} (Admin Edit)`,
-          storeName: existingClaim.storeName,
-          orderId: existingClaim.orderId
-        }
-      });
-    });
-
-    return res.json({ success: true, message: 'Cashback amount updated successfully.' });
-
-  } catch (error) {
-    console.error('Error updating awarded cashback:', error);
-    res.status(500).json({ error: 'Failed to update awarded cashback' });
-  }
+  return res.status(400).json({ error: 'Modifying cashback amount after approval is disabled. Claims cannot be modified once processed.' });
 };

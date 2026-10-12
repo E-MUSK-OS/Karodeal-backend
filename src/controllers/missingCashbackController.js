@@ -6,7 +6,7 @@ import { uploadToCloudinary } from '../utils/cloudinary.js';
  */
 export const submitTicket = async (req, res) => {
   const userId = req.userId;
-  const { storeName, orderDate, orderId, orderAmount, userNote } = req.body;
+  const { storeName, orderDate, orderId, orderAmount, userNote, productId } = req.body;
 
   if (!storeName || !orderDate || !orderId || !orderAmount) {
     return res.status(400).json({ error: 'All required fields must be provided' });
@@ -27,6 +27,18 @@ export const submitTicket = async (req, res) => {
     return res.status(400).json({ error: 'A missing cashback ticket for this Order ID has already been submitted.' });
   }
 
+  // Automatically link to product if provided or if matched with a CashbackClaim
+  let resolvedProductId = productId || null;
+  if (!resolvedProductId) {
+    const matchedClaim = await prisma.cashbackClaim.findFirst({
+      where: { orderId },
+      select: { productId: true }
+    });
+    if (matchedClaim?.productId) {
+      resolvedProductId = matchedClaim.productId;
+    }
+  }
+
   // Generate 6-character random alphanumeric ticketId
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let ticketId = '';
@@ -44,6 +56,7 @@ export const submitTicket = async (req, res) => {
         orderId,
         orderAmount: parseFloat(orderAmount),
         userNote,
+        productId: resolvedProductId,
         status: 'PENDING',
         orderScreenshots
       }
@@ -66,6 +79,7 @@ export const getUserTickets = async (req, res) => {
     const tickets = await prisma.missingCashbackTicket.findMany({
       where: { userId },
       include: {
+        product: { select: { id: true, title: true, image: true, slug: true, cashback: true } },
         messages: {
           orderBy: { createdAt: 'asc' }
         }
@@ -86,7 +100,7 @@ export const getUserTickets = async (req, res) => {
 export const updateUserTicket = async (req, res) => {
   const userId = req.userId;
   const { id } = req.params;
-  const { storeName, orderDate, orderId, orderAmount, userNote } = req.body;
+  const { storeName, orderDate, orderId, orderAmount, userNote, productId } = req.body;
 
   if (!storeName || !orderDate || !orderId || !orderAmount) {
     return res.status(400).json({ error: 'All required fields must be provided' });
@@ -105,7 +119,8 @@ export const updateUserTicket = async (req, res) => {
         orderDate: new Date(orderDate),
         orderId,
         orderAmount: parseFloat(orderAmount),
-        userNote
+        userNote,
+        ...(productId !== undefined ? { productId: productId || null } : {})
       }
     });
 
@@ -121,9 +136,33 @@ export const updateUserTicket = async (req, res) => {
  */
 export const getAllTickets = async (req, res) => {
   try {
+    let where = {};
+    if (req.userRole === 'SUB_ADMIN') {
+      const subAdminProducts = await prisma.product.findMany({
+        where: { createdById: req.userId },
+        select: { id: true }
+      });
+      const subAdminProductIds = subAdminProducts.map(p => p.id);
+
+      const subAdminClaims = await prisma.cashbackClaim.findMany({
+        where: { product: { createdById: req.userId } },
+        select: { orderId: true }
+      });
+      const subAdminOrderIds = subAdminClaims.map(c => c.orderId).filter(Boolean);
+
+      where = {
+        OR: [
+          { productId: { in: subAdminProductIds } },
+          { orderId: { in: subAdminOrderIds } }
+        ]
+      };
+    }
+
     const tickets = await prisma.missingCashbackTicket.findMany({
+      where,
       include: {
         user: { select: { id: true, name: true, email: true } },
+        product: { select: { id: true, title: true, image: true, slug: true, cashback: true, createdById: true } },
         messages: {
           orderBy: { createdAt: 'asc' }
         }
@@ -131,7 +170,36 @@ export const getAllTickets = async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    res.json({ success: true, tickets });
+    // Also fetch matched claims for these tickets
+    const orderIds = tickets.map(t => t.orderId).filter(Boolean);
+    const matchedClaims = orderIds.length > 0 ? await prisma.cashbackClaim.findMany({
+      where: { orderId: { in: orderIds } },
+      select: {
+        id: true,
+        ticketId: true,
+        status: true,
+        awardedCashback: true,
+        adminNote: true,
+        orderId: true,
+        product: { select: { id: true, title: true, cashback: true } },
+        invoiceScreenshot: true,
+        reviewScreenshot: true,
+        noReturnScreenshot: true,
+        createdAt: true
+      }
+    }) : [];
+
+    const claimsByOrderId = {};
+    matchedClaims.forEach(c => {
+      claimsByOrderId[c.orderId] = c;
+    });
+
+    const ticketsWithClaims = tickets.map(t => ({
+      ...t,
+      matchedClaim: claimsByOrderId[t.orderId] || null
+    }));
+
+    res.json({ success: true, tickets: ticketsWithClaims });
   } catch (error) {
     console.error('Error fetching all tickets:', error);
     res.status(500).json({ error: 'Failed to fetch tickets' });
@@ -143,16 +211,122 @@ export const getAllTickets = async (req, res) => {
  */
 export const updateTicketStatus = async (req, res) => {
   const { id } = req.params;
-  const { status, adminNote } = req.body;
+  const { status, adminNote, awardedCashback } = req.body;
 
   if (!['PENDING', 'RESOLVED', 'REJECTED'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
   try {
+    const existingTicket = await prisma.missingCashbackTicket.findUnique({
+      where: { id },
+      include: { product: true }
+    });
+    if (!existingTicket) return res.status(404).json({ error: 'Ticket not found' });
+
+    if (existingTicket.status !== 'PENDING') {
+      return res.status(400).json({ error: 'This ticket has already been processed. Once resolved or rejected, it cannot be modified.' });
+    }
+
+    if (!['RESOLVED', 'REJECTED'].includes(status)) {
+      return res.status(400).json({ error: 'Status can only be updated to RESOLVED or REJECTED.' });
+    }
+
+    if (status === 'REJECTED' && (!adminNote || !adminNote.trim())) {
+      return res.status(400).json({ error: 'Admin note / reason is compulsory when rejecting a ticket.' });
+    }
+
+    const trimmedAdminNote = adminNote && adminNote.trim() ? adminNote.trim() : null;
+
+    if (req.userRole === 'SUB_ADMIN') {
+      const isProductAuthor = existingTicket.product?.createdById === req.userId;
+      const isClaimAuthor = await prisma.cashbackClaim.findFirst({
+        where: { orderId: existingTicket.orderId, product: { createdById: req.userId } }
+      });
+
+      if (!isProductAuthor && !isClaimAuthor) {
+        return res.status(403).json({ error: 'Forbidden: You can only manage tickets for your own products.' });
+      }
+    }
+
+    const matchedClaim = await prisma.cashbackClaim.findFirst({
+      where: { orderId: existingTicket.orderId }
+    });
+
+    // If resolving and cashback amount is provided, credit wallet & approve claim
+    if (status === 'RESOLVED' && awardedCashback !== undefined && awardedCashback !== null && String(awardedCashback).trim() !== '') {
+      const cashbackAmt = parseFloat(awardedCashback);
+      if (isNaN(cashbackAmt) || cashbackAmt < 0) {
+        return res.status(400).json({ error: 'Invalid cashback amount' });
+      }
+
+      if (cashbackAmt > 0) {
+        if (matchedClaim?.status === 'APPROVED') {
+          return res.status(400).json({
+            error: `Claim for Order #${existingTicket.orderId} is already approved with ₹${matchedClaim.awardedCashback}. Cannot credit twice.`
+          });
+        }
+
+        await prisma.$transaction(async (tx) => {
+          // 1. Update ticket
+          await tx.missingCashbackTicket.update({
+            where: { id },
+            data: { status, adminNote: trimmedAdminNote }
+          });
+
+          // 2. If matched claim exists, update it to APPROVED
+          if (matchedClaim) {
+            await tx.cashbackClaim.update({
+              where: { id: matchedClaim.id },
+              data: {
+                status: 'APPROVED',
+                awardedCashback: cashbackAmt,
+                adminNote: trimmedAdminNote || `Approved via Missing Cashback Ticket #${existingTicket.ticketId || existingTicket.id.slice(-6).toUpperCase()}`
+              }
+            });
+          }
+
+          // 3. Update User Wallet
+          await tx.wallet.upsert({
+            where: { userId: existingTicket.userId },
+            create: {
+              userId: existingTicket.userId,
+              confirmedBalance: cashbackAmt,
+              availableBalance: cashbackAmt
+            },
+            update: {
+              confirmedBalance: { increment: cashbackAmt },
+              availableBalance: { increment: cashbackAmt }
+            }
+          });
+
+          // 4. Create Transaction record
+          await tx.transaction.create({
+            data: {
+              userId: existingTicket.userId,
+              amount: cashbackAmt,
+              type: 'EARNING',
+              status: 'CONFIRMED',
+              description: matchedClaim 
+                ? `Cashback Claim Approved via Ticket (#${existingTicket.orderId})`
+                : `Missing Cashback Awarded for Order #${existingTicket.orderId}`,
+              storeName: existingTicket.storeName,
+              orderId: existingTicket.orderId
+            }
+          });
+        });
+
+        return res.json({ 
+          success: true, 
+          message: `Ticket resolved and ₹${cashbackAmt} cashback credited to user wallet successfully.` 
+        });
+      }
+    }
+
+    // Default update (e.g. without crediting money or changing to REJECTED)
     const ticket = await prisma.missingCashbackTicket.update({
       where: { id },
-      data: { status, adminNote }
+      data: { status, adminNote: trimmedAdminNote }
     });
 
     res.json({ success: true, ticket });
@@ -179,12 +353,26 @@ export const addMessage = async (req, res) => {
   }
 
   try {
-    const ticket = await prisma.missingCashbackTicket.findUnique({ where: { id } });
+    const ticket = await prisma.missingCashbackTicket.findUnique({
+      where: { id },
+      include: { product: true }
+    });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
     // Auth validation handled by routes
     if (sender === 'USER' && ticket.userId !== req.userId) {
       return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    if (sender === 'ADMIN' && req.userRole === 'SUB_ADMIN') {
+      const isProductAuthor = ticket.product?.createdById === req.userId;
+      const isClaimAuthor = await prisma.cashbackClaim.findFirst({
+        where: { orderId: ticket.orderId, product: { createdById: req.userId } }
+      });
+
+      if (!isProductAuthor && !isClaimAuthor) {
+        return res.status(403).json({ error: 'Forbidden: You can only message on tickets for your own products.' });
+      }
     }
 
     const newMessage = await prisma.ticketMessage.create({

@@ -10,6 +10,7 @@ datasource db {
 enum Role {
   USER
   ADMIN
+  SUB_ADMIN
 }
 
 /// Represents a user account in the system
@@ -30,6 +31,7 @@ model User {
   missingCashbackTickets MissingCashbackTicket[]
   cashbackClaims         CashbackClaim[]
   productClicks          ProductClick[]
+  createdProducts        Product[]               @relation("AdminCreatedProducts")
 }
 
 /// Represents a user's cashback and rewards wallet
@@ -103,12 +105,16 @@ model Product {
   expiresAt     DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  createdById   String?
+  createdBy     User?    @relation("AdminCreatedProducts", fields: [createdById], references: [id])
   cashbackClaims CashbackClaim[]
+  missingCashbackTickets MissingCashbackTicket[]
   clicks         ProductClick[]
 
   @@index([storeId])
   @@index([categoryId])
   @@index([isTrending])
+  @@index([createdById])
 }
 
 /// Represents an e-commerce platform or store (e.g., Amazon, Flipkart)
@@ -173,6 +179,8 @@ model MissingCashbackTicket {
   userId           String
   user             User            @relation(fields: [userId], references: [id])
   storeName        String
+  productId        String?
+  product          Product?        @relation(fields: [productId], references: [id])
   orderDate        DateTime
   orderId          String
   orderAmount      Float
@@ -188,6 +196,7 @@ model MissingCashbackTicket {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([productId])
   @@index([status])
 }
 

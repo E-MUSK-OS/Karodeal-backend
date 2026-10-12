@@ -494,7 +494,7 @@ export const changePassword = async (req, res) => {
  * Assumes the request has passed the requireAdmin middleware.
  */
 export const verifyAdmin = (req, res) => {
-  res.json({ valid: true });
+  res.json({ valid: true, role: req.userRole });
 };
 
 /**
@@ -523,6 +523,31 @@ export const getAllUsers = async (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Server error while fetching users' });
+  }
+};
+
+/**
+ * Updates a user's role (Main Admin only)
+ */
+export const updateUserRole = async (req, res) => {
+  const { id } = req.params;
+  const { role } = req.body;
+
+  if (!['USER', 'SUB_ADMIN', 'ADMIN'].includes(role)) {
+    return res.status(400).json({ error: 'Invalid role. Must be USER, SUB_ADMIN, or ADMIN.' });
+  }
+
+  // Prevent main admin from demoting themselves
+  if (req.userId === id && role !== 'ADMIN') {
+    return res.status(400).json({ error: 'You cannot remove your own Main Admin privileges to prevent account lockout.' });
+  }
+
+  try {
+    const updated = await updateUser(id, { role });
+    res.json({ success: true, message: `User role updated to ${role}`, user: { id: updated.id, email: updated.email, role: updated.role } });
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    res.status(500).json({ error: 'Server error while updating user role' });
   }
 };
 

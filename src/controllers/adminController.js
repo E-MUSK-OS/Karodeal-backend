@@ -4,31 +4,178 @@ const prisma = new PrismaClient();
 
 export const getAdminStats = async (req, res) => {
   try {
-    const usersCount = await prisma.user.count();
-    const storesCount = await prisma.store.count();
-    const dealsCount = await prisma.product.count();
-    
-    // Sum of all pending withdrawals or pending claims?
-    // Let's sum pending payouts
-    const pendingPayouts = await prisma.payoutRequest.aggregate({
-      where: { status: 'PENDING' },
-      _sum: { amount: true }
-    });
-    
-    const recentUsers = await prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-      select: { id: true, name: true, email: true, createdAt: true, role: true }
+    const isSubAdmin = req.userRole === 'SUB_ADMIN';
+
+    if (isSubAdmin) {
+      // 1. My Products
+      const myProducts = await prisma.product.findMany({
+        where: { createdById: req.userId },
+        select: { id: true, storeId: true }
+      });
+      const myProductIds = myProducts.map(p => p.id);
+      const myDealsCount = myProductIds.length;
+      const myUniqueStoreIds = [...new Set(myProducts.map(p => p.storeId).filter(Boolean))];
+
+      // 2. My Product Clicks
+      const myClicksCount = myProductIds.length > 0 ? await prisma.productClick.count({
+        where: { productId: { in: myProductIds } }
+      }) : 0;
+
+      // 3. Claims on Sub-Admin's products
+      const myClaims = myProductIds.length > 0 ? await prisma.cashbackClaim.findMany({
+        where: { productId: { in: myProductIds } },
+        select: { orderId: true, status: true, product: { select: { cashback: true } } }
+      }) : [];
+      const myPendingClaims = myClaims.filter(c => c.status === 'PENDING');
+      const myPendingClaimsCount = myPendingClaims.length;
+      const myPendingClaimsAmount = myPendingClaims.reduce((sum, c) => sum + Number(c.product?.cashback || 0), 0);
+      const myOrderIds = myClaims.map(c => c.orderId).filter(Boolean);
+
+      // 4. Missing Tickets on Sub-Admin's products or orders
+      const myTicketsCount = await prisma.missingCashbackTicket.count({
+        where: {
+          status: 'PENDING',
+          OR: [
+            ...(myProductIds.length > 0 ? [{ productId: { in: myProductIds } }] : []),
+            ...(myOrderIds.length > 0 ? [{ orderId: { in: myOrderIds } }] : [])
+          ]
+        }
+      });
+
+      // 5. Recent Clicks on Sub-Admin's products
+      const recentClicks = myProductIds.length > 0 ? await prisma.productClick.findMany({
+        where: { productId: { in: myProductIds } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: {
+          product: { select: { title: true, image: true } },
+          user: { select: { name: true, email: true } }
+        }
+      }) : [];
+
+      // 6. Recent Claims on Sub-Admin's products
+      const recentClaims = myProductIds.length > 0 ? await prisma.cashbackClaim.findMany({
+        where: { productId: { in: myProductIds } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: {
+          product: { select: { title: true, cashback: true } },
+          user: { select: { name: true, email: true } }
+        }
+      }) : [];
+
+      // 7. Latest Deals added by Sub-Admin
+      const latestDeals = await prisma.product.findMany({
+        where: { createdById: req.userId },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          title: true,
+          salePrice: true,
+          cashback: true,
+          createdAt: true,
+          storeRel: { select: { name: true } },
+          categoryRel: { select: { name: true } }
+        }
+      });
+
+      return res.json({
+        role: 'SUB_ADMIN',
+        stats: {
+          myDealsCount,
+          myClicksCount,
+          myPendingClaimsCount,
+          myPendingClaimsAmount,
+          myPendingTicketsCount: myTicketsCount,
+          myStoresCount: myUniqueStoreIds.length
+        },
+        latestDeals,
+        recentClicks,
+        recentClaims
+      });
+    }
+
+    // MAIN ADMIN Stats (Global site-wide)
+    const [
+      dealsCount,
+      storesCount,
+      usersCount,
+      pendingPayouts,
+      pendingClaims,
+      pendingTickets,
+      totalClicksCount,
+      recentUsers,
+      recentPayouts
+    ] = await Promise.all([
+      prisma.product.count(),
+      prisma.store.count(),
+      prisma.user.count(),
+      prisma.payoutRequest.aggregate({
+        where: { status: 'PENDING' },
+        _sum: { amount: true },
+        _count: { id: true }
+      }),
+      prisma.cashbackClaim.findMany({
+        where: { status: 'PENDING' },
+        select: { product: { select: { cashback: true } } }
+      }),
+      prisma.missingCashbackTicket.findMany({
+        where: { status: 'PENDING' },
+        select: {
+          id: true,
+          orderId: true,
+          product: { select: { cashback: true } }
+        }
+      }),
+      prisma.productClick.count(),
+      prisma.user.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { id: true, name: true, email: true, createdAt: true, role: true }
+      }),
+      prisma.payoutRequest.findMany({
+        where: { status: 'PENDING' },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: { user: { select: { name: true, email: true } } }
+      })
+    ]);
+
+    // Calculate missing cashback in Rs
+    const ticketOrderIdsWithoutCb = pendingTickets.filter(t => !t.product?.cashback).map(t => t.orderId).filter(Boolean);
+    const matchedClaims = ticketOrderIdsWithoutCb.length > 0 ? await prisma.cashbackClaim.findMany({
+      where: { orderId: { in: ticketOrderIdsWithoutCb } },
+      select: { orderId: true, product: { select: { cashback: true } }, awardedCashback: true }
+    }) : [];
+    const claimCbByOrderId = {};
+    matchedClaims.forEach(c => {
+      claimCbByOrderId[c.orderId] = c.product?.cashback || c.awardedCashback || 0;
     });
 
-    res.json({
+    const totalMissingCashbackAmount = pendingTickets.reduce((sum, t) => {
+      const cb = t.product?.cashback ?? claimCbByOrderId[t.orderId] ?? 0;
+      return sum + Number(cb);
+    }, 0);
+
+    const pendingCashbackSum = pendingClaims.reduce((sum, c) => sum + Number(c.product?.cashback || 0), 0);
+
+    return res.json({
+      role: 'ADMIN',
       stats: {
         usersCount,
         storesCount,
         dealsCount,
-        pendingCashback: pendingPayouts._sum.amount || 0,
+        pendingWithdrawal: pendingPayouts._sum.amount || 0,
+        pendingWithdrawalsCount: pendingPayouts._count.id || 0,
+        pendingCashback: pendingCashbackSum,
+        pendingClaimsCount: pendingClaims.length,
+        missingCashbackAmount: totalMissingCashbackAmount,
+        pendingTicketsCount: pendingTickets.length,
+        totalClicksCount
       },
-      recentUsers
+      recentUsers,
+      recentPayouts
     });
   } catch (error) {
     console.error('Error fetching admin stats:', error);
@@ -36,14 +183,18 @@ export const getAdminStats = async (req, res) => {
   }
 };
 
-// Get all product clicks
+// Get product clicks (Filtered for sub-admin to only show clicks on their own products)
 export const getProductClicks = async (req, res) => {
   try {
+    const isSubAdmin = req.userRole === 'SUB_ADMIN';
+    const whereClause = isSubAdmin ? { product: { createdById: req.userId } } : {};
+
     const clicks = await prisma.productClick.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       include: {
         user: { select: { name: true, email: true } },
-        product: { select: { title: true, storeRel: { select: { name: true } } } }
+        product: { select: { title: true, storeRel: { select: { name: true } }, createdById: true } }
       }
     });
     res.json(clicks);

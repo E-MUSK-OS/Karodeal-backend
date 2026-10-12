@@ -30,12 +30,37 @@ export const requireAdmin = async (req, res, next) => {
     const decoded = verifyAccessToken(token);
     const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
     
-    if (!user || user.role !== 'ADMIN') {
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUB_ADMIN')) {
       return res.status(403).json({ error: 'Forbidden: Administrator access required' });
     }
 
     req.userId = decoded.userId;
     req.userRole = user.role;
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+  }
+};
+
+export const requireMainAdmin = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized: No token provided' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = verifyAccessToken(token);
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    
+    if (!user || user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Forbidden: Main Administrator access required' });
+    }
+
+    req.userId = decoded.userId;
+    req.userRole = user.role;
+    req.user = user;
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });

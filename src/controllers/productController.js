@@ -41,11 +41,18 @@ export const getAdminProducts = async (req, res) => {
       data: { isActive: false }
     }).catch(() => {});
 
+    const whereClause = {};
+    if (req.userRole === 'SUB_ADMIN') {
+      whereClause.createdById = req.userId;
+    }
+
     const products = await prisma.product.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       include: { 
         storeRel: { select: { id: true, name: true, logoUrl: true, slug: true } }, 
-        categoryRel: { select: { id: true, name: true, slug: true } } 
+        categoryRel: { select: { id: true, name: true, slug: true } },
+        createdBy: { select: { id: true, name: true, email: true, role: true } }
       }
     });
     res.json(products);
@@ -84,25 +91,63 @@ export const createProduct = async (req, res) => {
     if (imageUrl && imageUrl.startsWith('data:image')) {
       imageUrl = await uploadToCloudinary(imageUrl, 'products');
     }
+
+    const normalizedTitle = productData.title ? productData.title.trim() : '';
+    if (!normalizedTitle) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+
+    // Check if product with the same title already exists (case-insensitive)
+    const existingProduct = await prisma.product.findFirst({
+      where: {
+        title: {
+          equals: normalizedTitle,
+          mode: 'insensitive'
+        }
+      }
+    });
+
+    if (existingProduct) {
+      return res.status(400).json({ 
+        error: 'A product card with this title already exists. Please choose a different title.' 
+      });
+    }
+
+    const slug = normalizedTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const existingSlug = await prisma.product.findUnique({
+      where: { slug }
+    });
+    if (existingSlug) {
+      return res.status(400).json({ 
+        error: 'A product card with this title already exists. Please choose a different title.' 
+      });
+    }
+
     const product = await prisma.product.create({
       data: {
-        slug: productData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
-        title: productData.title,
+        slug,
+        title: normalizedTitle,
         storeId: productData.store,
         categoryId: productData.category,
         image: imageUrl,
-        originalPrice: parseFloat(productData.originalPrice),
-        salePrice: parseFloat(productData.salePrice),
-        discount: parseFloat(productData.discount),
+        originalPrice: parseFloat(productData.originalPrice) || 0,
+        salePrice: parseFloat(productData.salePrice) || 0,
+        discount: parseFloat(productData.discount) || 0,
         cashback: productData.cashback ? parseFloat(productData.cashback) : null,
         affiliateUrl: productData.affiliateUrl,
         isTrending: productData.isTrending || false,
         isActive: productData.isActive !== undefined ? productData.isActive : true,
         expiresAt: productData.expiresAt ? new Date(productData.expiresAt) : null,
+        createdById: req.userId || null,
       }
     });
     res.status(201).json(product);
   } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ 
+        error: 'A product card with this title already exists. Please choose a different title.' 
+      });
+    }
     console.error('Error creating product:', error);
     res.status(500).json({ error: 'Failed to create product' });
   }
@@ -175,6 +220,7 @@ export const createProductsBulk = async (req, res) => {
           affiliateUrl: productData.affiliateUrl || '',
           isTrending: productData.isTrending || false,
           isActive: productData.isActive !== undefined ? productData.isActive : true,
+          createdById: req.userId || null,
         }
       });
       createdProducts.push(product);
@@ -195,7 +241,23 @@ export const updateProduct = async (req, res) => {
     
     const updateData = { ...productData };
     if (updateData.title) {
-      updateData.slug = updateData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const normalizedTitle = updateData.title.trim();
+      const duplicateProduct = await prisma.product.findFirst({
+        where: {
+          id: { not: id },
+          title: {
+            equals: normalizedTitle,
+            mode: 'insensitive'
+          }
+        }
+      });
+      if (duplicateProduct) {
+        return res.status(400).json({ 
+          error: 'Another product card with this title already exists. Please choose a different title.' 
+        });
+      }
+      updateData.title = normalizedTitle;
+      updateData.slug = normalizedTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     }
     delete updateData.slug_manual; // Clean up if any
     
@@ -233,6 +295,11 @@ export const updateProduct = async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
+    // Sub-admins can only edit products they created
+    if (req.userRole === 'SUB_ADMIN' && existingProduct.createdById !== req.userId) {
+      return res.status(403).json({ error: 'Forbidden: You can only edit product cards that you created.' });
+    }
+
     // If activating an expired product without providing a new expiry, clear past expiration
     if (updateData.isActive === true && updateData.expiresAt === undefined) {
       if (existingProduct.expiresAt && existingProduct.expiresAt <= new Date()) {
@@ -260,6 +327,11 @@ export const updateProduct = async (req, res) => {
     });
     res.json(product);
   } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(400).json({ 
+        error: 'Another product card with this title already exists. Please choose a different title.' 
+      });
+    }
     console.error('Error updating product:', error);
     res.status(500).json({ error: 'Failed to update product' });
   }
@@ -271,7 +343,16 @@ export const deleteProduct = async (req, res) => {
     const { id } = req.params;
     
     const existingProduct = await prisma.product.findUnique({ where: { id: id } });
-    if (existingProduct && existingProduct.image && existingProduct.image.includes('cloudinary.com')) {
+    if (!existingProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Sub-admins can only delete products they created
+    if (req.userRole === 'SUB_ADMIN' && existingProduct.createdById !== req.userId) {
+      return res.status(403).json({ error: 'Forbidden: You can only delete product cards that you created.' });
+    }
+
+    if (existingProduct.image && existingProduct.image.includes('cloudinary.com')) {
       await deleteFromCloudinary(existingProduct.image);
     }
     
