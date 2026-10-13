@@ -21,28 +21,7 @@ export const getAdminStats = async (req, res) => {
         where: { productId: { in: myProductIds } }
       }) : 0;
 
-      // 3. Claims on Sub-Admin's products
-      const myClaims = myProductIds.length > 0 ? await prisma.cashbackClaim.findMany({
-        where: { productId: { in: myProductIds } },
-        select: { orderId: true, status: true, product: { select: { cashback: true } } }
-      }) : [];
-      const myPendingClaims = myClaims.filter(c => c.status === 'PENDING');
-      const myPendingClaimsCount = myPendingClaims.length;
-      const myPendingClaimsAmount = myPendingClaims.reduce((sum, c) => sum + Number(c.product?.cashback || 0), 0);
-      const myOrderIds = myClaims.map(c => c.orderId).filter(Boolean);
-
-      // 4. Missing Tickets on Sub-Admin's products or orders
-      const myTicketsCount = await prisma.missingCashbackTicket.count({
-        where: {
-          status: 'PENDING',
-          OR: [
-            ...(myProductIds.length > 0 ? [{ productId: { in: myProductIds } }] : []),
-            ...(myOrderIds.length > 0 ? [{ orderId: { in: myOrderIds } }] : [])
-          ]
-        }
-      });
-
-      // 5. Recent Clicks on Sub-Admin's products
+      // 3. Recent Clicks on Sub-Admin's products
       const recentClicks = myProductIds.length > 0 ? await prisma.productClick.findMany({
         where: { productId: { in: myProductIds } },
         orderBy: { createdAt: 'desc' },
@@ -53,18 +32,7 @@ export const getAdminStats = async (req, res) => {
         }
       }) : [];
 
-      // 6. Recent Claims on Sub-Admin's products
-      const recentClaims = myProductIds.length > 0 ? await prisma.cashbackClaim.findMany({
-        where: { productId: { in: myProductIds } },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        include: {
-          product: { select: { title: true, cashback: true } },
-          user: { select: { name: true, email: true } }
-        }
-      }) : [];
-
-      // 7. Latest Deals added by Sub-Admin
+      // 4. Latest Deals added by Sub-Admin
       const latestDeals = await prisma.product.findMany({
         where: { createdById: req.userId },
         orderBy: { createdAt: 'desc' },
@@ -85,14 +53,10 @@ export const getAdminStats = async (req, res) => {
         stats: {
           myDealsCount,
           myClicksCount,
-          myPendingClaimsCount,
-          myPendingClaimsAmount,
-          myPendingTicketsCount: myTicketsCount,
           myStoresCount: myUniqueStoreIds.length
         },
         latestDeals,
-        recentClicks,
-        recentClaims
+        recentClicks
       });
     }
 

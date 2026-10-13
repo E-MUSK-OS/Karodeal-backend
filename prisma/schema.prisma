@@ -97,9 +97,11 @@ model Product {
   image         String
   originalPrice Float
   salePrice     Float
-  discount      Float
-  cashback      Float?
-  affiliateUrl  String
+  discount              Float
+  cashback              Float?
+  cashbackWithoutReview Float?
+  cashbackWithReview    Float?
+  affiliateUrl          String
   isTrending    Boolean  @default(false)
   isActive      Boolean  @default(true)
   expiresAt     DateTime?
@@ -230,8 +232,9 @@ model CashbackClaim {
   orderAmount        Float
   orderDate          DateTime
   invoiceScreenshot  String
-  reviewScreenshot   String
+  reviewScreenshot   String?
   noReturnScreenshot String
+  claimType          String      @default("WITH_REVIEW")
   status             ClaimStatus @default(PENDING)
   adminNote          String?
   awardedCashback    Float?

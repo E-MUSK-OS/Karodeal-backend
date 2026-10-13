@@ -5,15 +5,22 @@ const prisma = new PrismaClient();
 
 export const submitClaim = async (req, res) => {
   try {
-    const { storeName, productId, orderId, orderAmount, orderDate } = req.body;
+    const { storeName, productId, orderId, orderAmount, orderDate, claimType } = req.body;
+    const isWithReview = claimType !== 'WITHOUT_REVIEW';
 
-    // Check if files exist
-    if (!req.files || !req.files.invoice || !req.files.review || !req.files.noReturn) {
-      return res.status(400).json({ error: 'Invoice, Review, and No-Return screenshots are required.' });
+    // Check if required files exist
+    if (!req.files || !req.files.invoice || !req.files.noReturn) {
+      return res.status(400).json({ error: 'Invoice and No-Return screenshots are required.' });
+    }
+
+    if (isWithReview && (!req.files.review || !req.files.review[0])) {
+      return res.status(400).json({ error: 'Review screenshot is required for Review-based claim.' });
     }
 
     const invoiceScreenshot = await uploadToCloudinary(req.files.invoice[0].buffer, 'claims');
-    const reviewScreenshot = await uploadToCloudinary(req.files.review[0].buffer, 'claims');
+    const reviewScreenshot = req.files.review && req.files.review[0]
+      ? await uploadToCloudinary(req.files.review[0].buffer, 'claims')
+      : null;
     const noReturnScreenshot = await uploadToCloudinary(req.files.noReturn[0].buffer, 'claims');
 
     // Check if a claim for this Order ID already exists
@@ -41,6 +48,7 @@ export const submitClaim = async (req, res) => {
         orderId,
         orderAmount: parseFloat(orderAmount),
         orderDate: new Date(orderDate),
+        claimType: isWithReview ? 'WITH_REVIEW' : 'WITHOUT_REVIEW',
         invoiceScreenshot,
         reviewScreenshot,
         noReturnScreenshot
@@ -58,7 +66,21 @@ export const getUserClaims = async (req, res) => {
   try {
     const claims = await prisma.cashbackClaim.findMany({
       where: { userId: req.userId },
-      include: { product: { select: { id: true, title: true, image: true, slug: true, originalPrice: true, salePrice: true, cashback: true } } },
+      include: { 
+        product: { 
+          select: { 
+            id: true, 
+            title: true, 
+            image: true, 
+            slug: true, 
+            originalPrice: true, 
+            salePrice: true, 
+            cashback: true,
+            cashbackWithoutReview: true,
+            cashbackWithReview: true
+          } 
+        } 
+      },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -94,7 +116,20 @@ export const getAllClaims = async (req, res) => {
       where,
       include: {
         user: { select: { name: true, email: true, mobile: true } },
-        product: { select: { id: true, title: true, image: true, slug: true, originalPrice: true, salePrice: true, cashback: true, createdById: true } }
+        product: { 
+          select: { 
+            id: true, 
+            title: true, 
+            image: true, 
+            slug: true, 
+            originalPrice: true, 
+            salePrice: true, 
+            cashback: true, 
+            cashbackWithoutReview: true,
+            cashbackWithReview: true,
+            createdById: true 
+          } 
+        }
       },
       orderBy: { createdAt: 'desc' }
     });

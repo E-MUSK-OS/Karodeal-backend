@@ -1,9 +1,7 @@
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
 import { submitTicket, getUserTickets, getAllTickets, updateTicketStatus, updateUserTicket, addMessage, markUserRead, markAdminRead } from '../controllers/missingCashbackController.js';
-import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { requireAuth, requireMainAdmin } from '../middleware/auth.js';
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -22,10 +20,10 @@ router.put('/:id', updateUserTicket);
 router.post('/:id/messages', upload.single('attachment'), addMessage);
 router.put('/:id/read', markUserRead);
 
-// Admin routes
-router.get('/admin', requireAdmin, getAllTickets);
-router.put('/admin/:id', requireAdmin, updateTicketStatus);
-router.post('/admin/:id/messages', requireAdmin, upload.single('attachment'), addMessage);
-router.put('/admin/:id/read', requireAdmin, markAdminRead);
+// Admin routes (Main Admin only)
+router.get('/admin', requireMainAdmin, getAllTickets);
+router.put('/admin/:id', requireMainAdmin, updateTicketStatus);
+router.post('/admin/:id/messages', requireMainAdmin, upload.single('attachment'), addMessage);
+router.put('/admin/:id/read', requireMainAdmin, markAdminRead);
 
 export default router;

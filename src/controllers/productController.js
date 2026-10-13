@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
+import { calculateCashback } from '../utils/cashbackCalculator.js';
 const prisma = new PrismaClient();
 
 // Get all products
@@ -123,6 +124,9 @@ export const createProduct = async (req, res) => {
       });
     }
 
+    const salePriceNum = Math.max(0, parseFloat(productData.salePrice) || 0);
+    const { withoutReview, withReview } = calculateCashback(salePriceNum);
+
     const product = await prisma.product.create({
       data: {
         slug,
@@ -130,10 +134,12 @@ export const createProduct = async (req, res) => {
         storeId: productData.store,
         categoryId: productData.category,
         image: imageUrl,
-        originalPrice: parseFloat(productData.originalPrice) || 0,
-        salePrice: parseFloat(productData.salePrice) || 0,
-        discount: parseFloat(productData.discount) || 0,
-        cashback: productData.cashback ? parseFloat(productData.cashback) : null,
+        originalPrice: Math.max(0, parseFloat(productData.originalPrice) || 0),
+        salePrice: salePriceNum,
+        discount: Math.max(0, parseFloat(productData.discount) || 0),
+        cashback: withReview,
+        cashbackWithoutReview: withoutReview,
+        cashbackWithReview: withReview,
         affiliateUrl: productData.affiliateUrl,
         isTrending: productData.isTrending || false,
         isActive: productData.isActive !== undefined ? productData.isActive : true,
@@ -206,6 +212,9 @@ export const createProductsBulk = async (req, res) => {
         continue;
       }
 
+      const salePriceNum = Math.max(0, parseFloat(productData.salePrice) || 0);
+      const { withoutReview, withReview } = calculateCashback(salePriceNum);
+
       const product = await prisma.product.create({
         data: {
           slug: slug,
@@ -213,10 +222,12 @@ export const createProductsBulk = async (req, res) => {
           storeId: finalStoreId,
           categoryId: finalCategoryId,
           image: imageUrl,
-          originalPrice: parseFloat(productData.originalPrice) || 0,
-          salePrice: parseFloat(productData.salePrice) || 0,
-          discount: parseFloat(productData.discount) || 0,
-          cashback: productData.cashback !== undefined && productData.cashback !== '' ? parseFloat(productData.cashback) : null,
+          originalPrice: Math.max(0, parseFloat(productData.originalPrice) || 0),
+          salePrice: salePriceNum,
+          discount: Math.max(0, parseFloat(productData.discount) || 0),
+          cashback: withReview,
+          cashbackWithoutReview: withoutReview,
+          cashbackWithReview: withReview,
           affiliateUrl: productData.affiliateUrl || '',
           isTrending: productData.isTrending || false,
           isActive: productData.isActive !== undefined ? productData.isActive : true,
@@ -264,7 +275,6 @@ export const updateProduct = async (req, res) => {
     if (updateData.originalPrice !== undefined) updateData.originalPrice = parseFloat(updateData.originalPrice);
     if (updateData.salePrice !== undefined) updateData.salePrice = parseFloat(updateData.salePrice);
     if (updateData.discount !== undefined) updateData.discount = parseFloat(updateData.discount);
-    if (updateData.cashback !== undefined) updateData.cashback = updateData.cashback !== null && updateData.cashback !== '' ? parseFloat(updateData.cashback) : null;
     if (updateData.isActive !== undefined) updateData.isActive = Boolean(updateData.isActive);
     if (updateData.expiresAt !== undefined) {
       updateData.expiresAt = updateData.expiresAt ? new Date(updateData.expiresAt) : null;
@@ -315,6 +325,25 @@ export const updateProduct = async (req, res) => {
         await deleteFromCloudinary(existingProduct.image);
       }
     }
+
+    // Auto-calculate or respect provided cashback
+    const effectiveSalePrice = Math.max(0, updateData.salePrice !== undefined 
+      ? (parseFloat(updateData.salePrice) || 0)
+      : existingProduct.salePrice);
+    
+    if (updateData.salePrice !== undefined) {
+      updateData.salePrice = effectiveSalePrice;
+    }
+    if (updateData.originalPrice !== undefined) {
+      updateData.originalPrice = Math.max(0, parseFloat(updateData.originalPrice) || 0);
+    }
+    if (updateData.discount !== undefined) {
+      updateData.discount = Math.max(0, parseFloat(updateData.discount) || 0);
+    }
+    const { withoutReview, withReview } = calculateCashback(effectiveSalePrice);
+    updateData.cashback = withReview;
+    updateData.cashbackWithoutReview = withoutReview;
+    updateData.cashbackWithReview = withReview;
 
     // Remove deprecated fields so Prisma doesn't throw errors
     delete updateData.reviews;
@@ -392,4 +421,4 @@ export const trackProductClick = async (req, res) => {
     res.status(500).json({ error: 'Failed to track product click' });
   }
 };
-
+

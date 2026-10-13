@@ -8,9 +8,11 @@ export const submitTicket = async (req, res) => {
   const userId = req.userId;
   const { storeName, orderDate, orderId, orderAmount, userNote, productId } = req.body;
 
-  if (!storeName || !orderDate || !orderId || !orderAmount) {
+  if (!storeName || !orderId || !orderAmount) {
     return res.status(400).json({ error: 'All required fields must be provided' });
   }
+
+  const finalOrderDate = orderDate ? new Date(orderDate) : new Date();
 
   let orderScreenshots = [];
   if (req.files && req.files.length > 0) {
@@ -52,7 +54,7 @@ export const submitTicket = async (req, res) => {
         ticketId,
         userId,
         storeName,
-        orderDate: new Date(orderDate),
+        orderDate: finalOrderDate,
         orderId,
         orderAmount: parseFloat(orderAmount),
         userNote,
@@ -102,7 +104,7 @@ export const updateUserTicket = async (req, res) => {
   const { id } = req.params;
   const { storeName, orderDate, orderId, orderAmount, userNote, productId } = req.body;
 
-  if (!storeName || !orderDate || !orderId || !orderAmount) {
+  if (!storeName || !orderId || !orderAmount) {
     return res.status(400).json({ error: 'All required fields must be provided' });
   }
 
@@ -116,7 +118,7 @@ export const updateUserTicket = async (req, res) => {
       where: { id },
       data: {
         storeName,
-        orderDate: new Date(orderDate),
+        orderDate: orderDate ? new Date(orderDate) : existing.orderDate,
         orderId,
         orderAmount: parseFloat(orderAmount),
         userNote,
@@ -358,6 +360,10 @@ export const addMessage = async (req, res) => {
       include: { product: true }
     });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    if (ticket.status !== 'PENDING') {
+      return res.status(400).json({ error: 'This ticket has been finalized and is closed for new messages.' });
+    }
 
     // Auth validation handled by routes
     if (sender === 'USER' && ticket.userId !== req.userId) {
