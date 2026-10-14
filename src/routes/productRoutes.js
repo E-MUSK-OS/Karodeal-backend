@@ -8,7 +8,8 @@ import {
   deleteProduct,
   getAdminProducts,
   trackProductClick,
-  reorderProducts
+  reorderProducts,
+  getProductsSyncState
 } from '../controllers/productController.js';
 import { requireAuth, requireAdmin, requireMainAdmin, optionalAuth } from '../middleware/auth.js';
 
@@ -24,6 +25,7 @@ router.delete('/:id', requireAuth, requireAdmin, deleteProduct);
 
 // Public routes (must be at the bottom to avoid matching /admin as a slug)
 router.get('/', getProducts);
+router.get('/sync-state', getProductsSyncState);
 router.get('/:slug', getProductBySlug);
 router.post('/:id/click', optionalAuth, trackProductClick);
 

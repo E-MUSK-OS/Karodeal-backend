@@ -480,7 +480,8 @@ export const reorderProducts = async (req, res) => {
                 }
               },
               data: {
-                sortOrder: { increment: 1 }
+                sortOrder: { increment: 1 },
+                updatedAt: new Date()
               }
             });
           } else {
@@ -493,7 +494,8 @@ export const reorderProducts = async (req, res) => {
                 }
               },
               data: {
-                sortOrder: { decrement: 1 }
+                sortOrder: { decrement: 1 },
+                updatedAt: new Date()
               }
             });
           }
@@ -501,7 +503,7 @@ export const reorderProducts = async (req, res) => {
           // Finally set the moved product to target rank
           await tx.product.update({
             where: { id: productId },
-            data: { sortOrder: target }
+            data: { sortOrder: target, updatedAt: new Date() }
           });
         });
       }
@@ -542,6 +544,41 @@ export const reorderProducts = async (req, res) => {
   } catch (error) {
     console.error('Error reordering products:', error);
     res.status(500).json({ error: 'Failed to reorder products' });
+  }
+};
+
+// Lightweight sync state for smart background polling across all environments (including Vercel serverless)
+export const getProductsSyncState = async (req, res) => {
+  try {
+    const latestProduct = await prisma.product.findFirst({
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true }
+    });
+
+    const topProducts = await prisma.product.findMany({
+      where: { isActive: true },
+      orderBy: [
+        { sortOrder: 'asc' },
+        { createdAt: 'desc' }
+      ],
+      take: 20,
+      select: { id: true, sortOrder: true }
+    });
+
+    const count = await prisma.product.count({ where: { isActive: true } });
+
+    const rankSignature = topProducts.map(p => `${p.id}:${p.sortOrder}`).join('|');
+    const signature = `${count}_${latestProduct?.updatedAt?.getTime() || 0}_${rankSignature}`;
+
+    res.json({
+      signature,
+      count,
+      lastUpdated: latestProduct?.updatedAt || null,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('Error fetching sync state:', error);
+    res.status(500).json({ error: 'Failed to fetch sync state' });
   }
 };
 
