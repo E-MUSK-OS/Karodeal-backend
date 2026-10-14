@@ -107,6 +107,7 @@ model Product {
   expiresAt     DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  sortOrder     Int      @default(0)
   createdById   String?
   createdBy     User?    @relation("AdminCreatedProducts", fields: [createdById], references: [id])
   cashbackClaims CashbackClaim[]
@@ -117,6 +118,7 @@ model Product {
   @@index([categoryId])
   @@index([isTrending])
   @@index([createdById])
+  @@index([sortOrder])
 }
 
 /// Represents an e-commerce platform or store (e.g., Amazon, Flipkart)

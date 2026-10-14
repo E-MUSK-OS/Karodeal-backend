@@ -7,14 +7,16 @@ import {
   updateProduct, 
   deleteProduct,
   getAdminProducts,
-  trackProductClick
+  trackProductClick,
+  reorderProducts
 } from '../controllers/productController.js';
-import { requireAuth, requireAdmin, optionalAuth } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, requireMainAdmin, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Admin-only routes
 router.get('/admin', requireAuth, requireAdmin, getAdminProducts);
+router.put('/reorder', requireAuth, requireMainAdmin, reorderProducts);
 router.post('/bulk', requireAuth, requireAdmin, createProductsBulk);
 router.post('/', requireAuth, requireAdmin, createProduct);
 router.put('/:id', requireAuth, requireAdmin, updateProduct);

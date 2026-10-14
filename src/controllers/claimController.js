@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../utils/db.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
-
-const prisma = new PrismaClient();
 
 export const submitClaim = async (req, res) => {
   try {
@@ -127,7 +125,10 @@ export const getAllClaims = async (req, res) => {
             cashback: true, 
             cashbackWithoutReview: true,
             cashbackWithReview: true,
-            createdById: true 
+            createdById: true,
+            createdBy: {
+              select: { id: true, name: true, email: true, role: true }
+            } 
           } 
         }
       },

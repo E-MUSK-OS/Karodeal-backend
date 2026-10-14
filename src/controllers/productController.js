@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
 import { calculateCashback } from '../utils/cashbackCalculator.js';
+import { emitProductsChange } from '../utils/socket.js';
 const prisma = new PrismaClient();
 
 // Get all products
@@ -20,7 +21,10 @@ export const getProducts = async (req, res) => {
           { expiresAt: { gt: now } }
         ]
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { sortOrder: 'asc' },
+        { createdAt: 'desc' }
+      ],
       include: { 
         storeRel: { select: { id: true, name: true, logoUrl: true, slug: true } }, 
         categoryRel: { select: { id: true, name: true, slug: true } } 
@@ -49,7 +53,10 @@ export const getAdminProducts = async (req, res) => {
 
     const products = await prisma.product.findMany({
       where: whereClause,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { sortOrder: 'asc' },
+        { createdAt: 'desc' }
+      ],
       include: { 
         storeRel: { select: { id: true, name: true, logoUrl: true, slug: true } }, 
         categoryRel: { select: { id: true, name: true, slug: true } },
@@ -127,6 +134,11 @@ export const createProduct = async (req, res) => {
     const salePriceNum = Math.max(0, parseFloat(productData.salePrice) || 0);
     const { withoutReview, withReview } = calculateCashback(salePriceNum);
 
+    // Shift existing products down so new product gets rank 1
+    await prisma.product.updateMany({
+      data: { sortOrder: { increment: 1 } }
+    });
+
     const product = await prisma.product.create({
       data: {
         slug,
@@ -145,9 +157,11 @@ export const createProduct = async (req, res) => {
         isActive: productData.isActive !== undefined ? productData.isActive : true,
         expiresAt: productData.expiresAt ? new Date(productData.expiresAt) : null,
         createdById: req.userId || null,
+        sortOrder: 1,
       }
     });
     res.status(201).json(product);
+    emitProductsChange('create', product);
   } catch (error) {
     if (error.code === 'P2002') {
       return res.status(400).json({ 
@@ -238,6 +252,7 @@ export const createProductsBulk = async (req, res) => {
     }
 
     res.status(201).json({ success: true, count: createdProducts.length, skippedCount });
+    emitProductsChange('bulk_create', { count: createdProducts.length });
   } catch (error) {
     console.error('Error in bulk creating products:', error);
     res.status(500).json({ error: 'Failed to bulk create products' });
@@ -288,6 +303,13 @@ export const updateProduct = async (req, res) => {
         updateData.expiresAt = null;
       }
       delete updateData.repost;
+
+      // Bring reposted product to top (Rank 1)
+      await prisma.product.updateMany({
+        where: { id: { not: id } },
+        data: { sortOrder: { increment: 1 } }
+      });
+      updateData.sortOrder = 1;
     }
     
     // Map relation fields to current schema
@@ -355,6 +377,7 @@ export const updateProduct = async (req, res) => {
       data: updateData
     });
     res.json(product);
+    emitProductsChange('update', product);
   } catch (error) {
     if (error.code === 'P2002') {
       return res.status(400).json({ 
@@ -389,6 +412,7 @@ export const deleteProduct = async (req, res) => {
       where: { id: id }
     });
     res.json({ message: 'Product deleted successfully' });
+    emitProductsChange('delete', { id });
   } catch (error) {
     console.error('Error deleting product:', error);
     res.status(500).json({ error: 'Failed to delete product' });
@@ -419,6 +443,105 @@ export const trackProductClick = async (req, res) => {
   } catch (error) {
     console.error('Error tracking product click:', error);
     res.status(500).json({ error: 'Failed to track product click' });
+  }
+};
+
+// Reorder products (Main Admin only)
+export const reorderProducts = async (req, res) => {
+  try {
+    if (req.userRole !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only Main Admin can reorder product cards' });
+    }
+
+    const { productId, targetRank, orderedIds, items } = req.body;
+
+    // Mode 1: Moving a single product to a target rank (e.g. move #50 to #2 or #3)
+    if (productId && targetRank !== undefined) {
+      const target = Math.max(1, parseInt(targetRank, 10));
+      const productToMove = await prisma.product.findUnique({
+        where: { id: productId }
+      });
+
+      if (!productToMove) {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+
+      const currentRank = productToMove.sortOrder;
+
+      if (currentRank !== target) {
+        await prisma.$transaction(async (tx) => {
+          if (target < currentRank) {
+            // Moving forward (e.g. 50 -> 2): Shift items between target and currentRank - 1 up by +1
+            await tx.product.updateMany({
+              where: {
+                sortOrder: {
+                  gte: target,
+                  lt: currentRank
+                }
+              },
+              data: {
+                sortOrder: { increment: 1 }
+              }
+            });
+          } else {
+            // Moving backward (e.g. 2 -> 50): Shift items between currentRank + 1 and target down by -1
+            await tx.product.updateMany({
+              where: {
+                sortOrder: {
+                  gt: currentRank,
+                  lte: target
+                }
+              },
+              data: {
+                sortOrder: { decrement: 1 }
+              }
+            });
+          }
+
+          // Finally set the moved product to target rank
+          await tx.product.update({
+            where: { id: productId },
+            data: { sortOrder: target }
+          });
+        });
+      }
+
+      emitProductsChange('reorder', { productId, targetRank: target });
+      return res.json({ success: true, message: `Product moved to rank ${target}` });
+    }
+
+    // Mode 2: Reordering by array of IDs: [id1, id2, id3, ...]
+    if (Array.isArray(orderedIds) && orderedIds.length > 0) {
+      await prisma.$transaction(
+        orderedIds.map((id, index) =>
+          prisma.product.update({
+            where: { id },
+            data: { sortOrder: index + 1 }
+          })
+        )
+      );
+      emitProductsChange('reorder', { orderedIds });
+      return res.json({ success: true, message: 'Products reordered successfully' });
+    }
+
+    // Mode 3: Reordering by array of items: [{ id, sortOrder }, ...]
+    if (Array.isArray(items) && items.length > 0) {
+      await prisma.$transaction(
+        items.map((item) =>
+          prisma.product.update({
+            where: { id: item.id },
+            data: { sortOrder: item.sortOrder }
+          })
+        )
+      );
+      emitProductsChange('reorder', { items });
+      return res.json({ success: true, message: 'Products reordered successfully' });
+    }
+
+    return res.status(400).json({ error: 'Invalid reorder parameters. Provide productId & targetRank, or orderedIds, or items.' });
+  } catch (error) {
+    console.error('Error reordering products:', error);
+    res.status(500).json({ error: 'Failed to reorder products' });
   }
 };
 

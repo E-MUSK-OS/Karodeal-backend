@@ -158,7 +158,14 @@ export const getProductClicks = async (req, res) => {
       orderBy: { createdAt: 'desc' },
       include: {
         user: { select: { name: true, email: true } },
-        product: { select: { title: true, storeRel: { select: { name: true } }, createdById: true } }
+        product: {
+          select: {
+            title: true,
+            storeRel: { select: { name: true } },
+            createdById: true,
+            createdBy: { select: { id: true, name: true, email: true, role: true } }
+          }
+        }
       }
     });
     res.json(clicks);

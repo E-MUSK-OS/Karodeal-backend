@@ -1,7 +1,9 @@
 import express from 'express';
+import http from 'http';
 import cors from 'cors';
 import 'dotenv/config';
 import { prisma } from './src/utils/db.js';
+import { initSocket } from './src/utils/socket.js';
 import userRoutes from './src/routes/userRoutes.js';
 import productRoutes from './src/routes/productRoutes.js';
 import storeRoutes from './src/routes/storeRoutes.js';
@@ -14,7 +16,12 @@ import adminRoutes from './src/routes/adminRoutes.js';
 import newsletterRoutes from './src/routes/newsletterRoutes.js';
 import contactRoutes from './src/routes/contactRoutes.js';
 import { initCronJobs } from './src/utils/cronJobs.js';
+
 const app = express();
+const server = http.createServer(app);
+const io = initSocket(server);
+app.set('io', io);
+
 const PORT = process.env.PORT || 5000;
 
 // Serve uploaded files statically
@@ -54,7 +61,7 @@ app.use('/api/contact', contactRoutes);
 if (!process.env.VERCEL) {
   initCronJobs();
 
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
 }

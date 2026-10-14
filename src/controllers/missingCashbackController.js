@@ -164,7 +164,19 @@ export const getAllTickets = async (req, res) => {
       where,
       include: {
         user: { select: { id: true, name: true, email: true } },
-        product: { select: { id: true, title: true, image: true, slug: true, cashback: true, createdById: true } },
+        product: { 
+          select: { 
+            id: true, 
+            title: true, 
+            image: true, 
+            slug: true, 
+            cashback: true, 
+            createdById: true,
+            createdBy: {
+              select: { id: true, name: true, email: true, role: true }
+            }
+          } 
+        },
         messages: {
           orderBy: { createdAt: 'asc' }
         }
@@ -183,7 +195,17 @@ export const getAllTickets = async (req, res) => {
         awardedCashback: true,
         adminNote: true,
         orderId: true,
-        product: { select: { id: true, title: true, cashback: true } },
+        product: { 
+          select: { 
+            id: true, 
+            title: true, 
+            cashback: true,
+            createdById: true,
+            createdBy: {
+              select: { id: true, name: true, email: true, role: true }
+            }
+          } 
+        },
         invoiceScreenshot: true,
         reviewScreenshot: true,
         noReturnScreenshot: true,
