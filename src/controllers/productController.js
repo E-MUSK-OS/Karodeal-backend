@@ -2,9 +2,10 @@ import { PrismaClient } from '@prisma/client';
 import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
 import { calculateCashback } from '../utils/cashbackCalculator.js';
 import { emitProductsChange } from '../utils/socket.js';
+import { mixProductsByStore } from '../utils/productMixer.js';
 const prisma = new PrismaClient();
 
-// Get all products
+// Get all products (Public - Store balanced mix + User variety)
 export const getProducts = async (req, res) => {
   try {
     const now = new Date();
@@ -13,14 +14,28 @@ export const getProducts = async (req, res) => {
       data: { isActive: false }
     }).catch(() => {});
 
+    const { seed, raw, store, category } = req.query;
+
+    const whereClause = { 
+      isActive: true,
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: now } }
+      ]
+    };
+
+    if (store) {
+      delete whereClause.OR;
+      whereClause.isActive = true;
+      whereClause.storeRel = { slug: store };
+    }
+
+    if (category) {
+      whereClause.categoryRel = { slug: category };
+    }
+
     const products = await prisma.product.findMany({
-      where: { 
-        isActive: true,
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gt: now } }
-        ]
-      },
+      where: whereClause,
       orderBy: [
         { sortOrder: 'asc' },
         { createdAt: 'desc' }
@@ -30,7 +45,15 @@ export const getProducts = async (req, res) => {
         categoryRel: { select: { id: true, name: true, slug: true } } 
       }
     });
-    res.json(products);
+
+    // If client specifically requests raw unmixed master order (e.g. ?raw=true)
+    if (raw === 'true' || raw === '1') {
+      return res.json(products);
+    }
+
+    // Apply Store-Balanced Mixing & User Session Variety
+    const mixedProducts = mixProductsByStore(products, seed);
+    res.json(mixedProducts);
   } catch (error) {
     console.error('Error fetching products:', error);
     res.status(500).json({ error: 'Failed to fetch products' });
@@ -183,6 +206,12 @@ export const createProductsBulk = async (req, res) => {
 
     const createdProducts = [];
     let skippedCount = 0;
+
+    const maxSortOrderProduct = await prisma.product.findFirst({
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true }
+    });
+    let nextSortOrder = (maxSortOrderProduct?.sortOrder || 0) + 1;
     
     // Process one by one to handle potential data formatting issues and Cloudinary uploads if any
     for (const productData of productsArray) {
@@ -208,7 +237,7 @@ export const createProductsBulk = async (req, res) => {
       }
 
       if (!finalStoreId || !finalCategoryId) {
-         return res.status(400).json({ error: 'You must have at least one Store and Category created in the system before importing products.' });
+        return res.status(400).json({ error: 'You must have at least one Store and Category created in the system before importing products.' });
       }
 
       const productTitle = productData.title || `Custom Deal ${Date.now()}`;
@@ -246,6 +275,7 @@ export const createProductsBulk = async (req, res) => {
           isTrending: productData.isTrending || false,
           isActive: productData.isActive !== undefined ? productData.isActive : true,
           createdById: req.userId || null,
+          sortOrder: nextSortOrder++,
         }
       });
       createdProducts.push(product);
