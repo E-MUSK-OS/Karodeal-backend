@@ -2,8 +2,8 @@
  * Product Mixer Utility
  * 
  * Provides:
- * 1. Store Interleaving (Company Mixing) - Balances products across stores so no single company dominates
- * 2. User Session Variety - Deterministic or random variety per user/session while respecting admin priority
+ * Full random shuffle across ALL products in the database for users/sessions,
+ * with light de-clustering so the same store doesn't monopolize consecutive slots.
  */
 
 function hashString(str) {
@@ -28,91 +28,45 @@ function createPRNG(seedValue) {
 }
 
 /**
- * Shuffles items within small windows/buckets (bucketSize)
- * so that top priority items stay near the top, but their relative order is varied.
- */
-function bucketShuffle(array, bucketSize, rng) {
-  const result = [...array];
-  for (let i = 0; i < result.length; i += bucketSize) {
-    const end = Math.min(i + bucketSize, result.length);
-    for (let j = end - 1; j > i; j--) {
-      const k = i + Math.floor(rng() * (j - i + 1));
-      [result[j], result[k]] = [result[k], result[j]];
-    }
-  }
-  return result;
-}
-
-/**
- * Mix products across stores (Interleaving) + User Session Variety
+ * Randomize products across ALL items in the database
  * 
- * @param {Array} products - Raw products from database (ordered by sortOrder asc)
- * @param {string|number|null} seed - Optional seed from user session
- * @returns {Array} - Balanced, mixed products
+ * @param {Array} products - Raw products from database
+ * @param {string|number|null} seed - Optional seed for session consistency
+ * @returns {Array} - Fully randomized products across all items
  */
 export function mixProductsByStore(products, seed = null) {
   if (!Array.isArray(products) || products.length <= 1) {
     return products;
   }
 
-  // Use provided seed or generate dynamic seed
+  // Use provided seed or generate dynamic seed for true random variety
   const actualSeed = seed || `${Date.now()}_${Math.random()}`;
   const rng = createPRNG(actualSeed);
 
-  // Group products by store
-  const storeMap = new Map();
-  for (const product of products) {
-    const storeKey = product.storeRel?.slug || product.storeRel?.id || product.storeId || 'other';
-    if (!storeMap.has(storeKey)) {
-      storeMap.set(storeKey, []);
-    }
-    storeMap.get(storeKey).push(product);
-  }
+  const shuffled = [...products];
 
-  // If only 1 store exists (e.g. filtered by store), bucket shuffle within that store
-  if (storeMap.size <= 1) {
-    return bucketShuffle(products, 4, rng);
-  }
-
-  // Prepare each store queue with varied ordering while respecting general admin priority
-  const storeQueues = [];
-  for (const [storeKey, items] of storeMap.entries()) {
-    // Preserve sortOrder prioritization, then bucket shuffle so top deals stay near top
-    items.sort((a, b) => {
-      const rankA = a.sortOrder !== undefined && a.sortOrder !== null ? a.sortOrder : 999999;
-      const rankB = b.sortOrder !== undefined && b.sortOrder !== null ? b.sortOrder : 999999;
-      if (rankA !== rankB) return rankA - rankB;
-      return new Date(b.createdAt) - new Date(a.createdAt);
-    });
-
-    const variedItems = bucketShuffle(items, 3, rng);
-    storeQueues.push({
-      storeKey,
-      items: variedItems,
-      index: 0
-    });
-  }
-
-  // Randomize initial store sequence for this user's session
-  for (let i = storeQueues.length - 1; i > 0; i--) {
+  // 1. Complete Fisher-Yates shuffle across ALL products
+  for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
-    [storeQueues[i], storeQueues[j]] = [storeQueues[j], storeQueues[i]];
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  // Interleave products across stores (Fair Round-Robin)
-  const mixed = [];
-  let activeQueues = storeQueues.filter(q => q.index < q.items.length);
+  // 2. Light de-clustering: avoid more than 2 consecutive items from the exact same company
+  for (let i = 2; i < shuffled.length; i++) {
+    const storeA = shuffled[i - 2].storeRel?.slug || shuffled[i - 2].storeId;
+    const storeB = shuffled[i - 1].storeRel?.slug || shuffled[i - 1].storeId;
+    const storeC = shuffled[i].storeRel?.slug || shuffled[i].storeId;
 
-  while (activeQueues.length > 0) {
-    for (let i = 0; i < activeQueues.length; i++) {
-      const q = activeQueues[i];
-      if (q.index < q.items.length) {
-        mixed.push(q.items[q.index]);
-        q.index++;
+    if (storeA && storeB && storeC && storeA === storeB && storeB === storeC) {
+      for (let k = i + 1; k < shuffled.length; k++) {
+        const storeK = shuffled[k].storeRel?.slug || shuffled[k].storeId;
+        if (storeK && storeK !== storeC) {
+          [shuffled[i], shuffled[k]] = [shuffled[k], shuffled[i]];
+          break;
+        }
       }
     }
-    activeQueues = activeQueues.filter(q => q.index < q.items.length);
   }
 
-  return mixed;
+  return shuffled;
 }
