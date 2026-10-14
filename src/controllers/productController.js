@@ -592,23 +592,69 @@ export const getProductsSyncState = async (req, res) => {
         { createdAt: 'desc' }
       ],
       take: 20,
-      select: { id: true, sortOrder: true }
+      select: { id: true, sortOrder: true, isPinned: true }
     });
 
     const count = await prisma.product.count({ where: { isActive: true } });
+    const pinnedCount = await prisma.product.count({ where: { isPinned: true } });
 
-    const rankSignature = topProducts.map(p => `${p.id}:${p.sortOrder}`).join('|');
-    const signature = `${count}_${latestProduct?.updatedAt?.getTime() || 0}_${rankSignature}`;
+    const rankSignature = topProducts.map(p => `${p.id}:${p.sortOrder}:${p.isPinned ? 1 : 0}`).join('|');
+    const signature = `${count}_${pinnedCount}_${latestProduct?.updatedAt?.getTime() || 0}_${rankSignature}`;
 
     res.json({
       signature,
       count,
+      pinnedCount,
       lastUpdated: latestProduct?.updatedAt || null,
       timestamp: Date.now()
     });
   } catch (error) {
     console.error('Error fetching sync state:', error);
     res.status(500).json({ error: 'Failed to fetch sync state' });
+  }
+};
+
+// Toggle Pin/Star status of a product (Admin only)
+export const togglePinProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isPinned } = req.body || {};
+
+    const existingProduct = await prisma.product.findUnique({
+      where: { id },
+      select: { id: true, isPinned: true, sortOrder: true, title: true }
+    });
+
+    if (!existingProduct) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const newPinnedStatus = typeof isPinned === 'boolean' ? isPinned : !existingProduct.isPinned;
+
+    const updated = await prisma.product.update({
+      where: { id },
+      data: {
+        isPinned: newPinnedStatus,
+        updatedAt: new Date()
+      }
+    });
+
+    emitProductsChange('pin_toggle', {
+      productId: id,
+      isPinned: newPinnedStatus,
+      sortOrder: updated.sortOrder
+    });
+
+    res.json({
+      success: true,
+      product: updated,
+      message: newPinnedStatus
+        ? `Product locked to Rank #${updated.sortOrder}`
+        : 'Product unlocked'
+    });
+  } catch (error) {
+    console.error('Error toggling product pin:', error);
+    res.status(500).json({ error: 'Failed to toggle product pin' });
   }
 };
 

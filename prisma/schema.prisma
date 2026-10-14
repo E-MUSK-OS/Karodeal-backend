@@ -108,6 +108,7 @@ model Product {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   sortOrder     Int      @default(0)
+  isPinned      Boolean  @default(false)
   createdById   String?
   createdBy     User?    @relation("AdminCreatedProducts", fields: [createdById], references: [id])
   cashbackClaims CashbackClaim[]
@@ -119,6 +120,7 @@ model Product {
   @@index([isTrending])
   @@index([createdById])
   @@index([sortOrder])
+  @@index([isPinned])
 }
 
 /// Represents an e-commerce platform or store (e.g., Amazon, Flipkart)
