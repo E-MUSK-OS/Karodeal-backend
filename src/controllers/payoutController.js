@@ -82,7 +82,7 @@ export const getAdminPayouts = async (req, res) => {
   try {
     const payouts = await prisma.payoutRequest.findMany({
       include: {
-        user: { select: { name: true, email: true } }
+        user: { select: { name: true, email: true, mobile: true } }
       },
       orderBy: { createdAt: 'desc' }
     });

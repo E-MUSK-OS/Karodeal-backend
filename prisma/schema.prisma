@@ -32,6 +32,8 @@ model User {
   cashbackClaims         CashbackClaim[]
   productClicks          ProductClick[]
   createdProducts        Product[]               @relation("AdminCreatedProducts")
+  reviewRequestsSubmitted ReviewRequest[]        @relation("SubAdminReviewRequests")
+  reviewRequestsReviewed  ReviewRequest[]        @relation("AdminReviewedReviewRequests")
 }
 
 /// Represents a user's cashback and rewards wallet
@@ -114,6 +116,7 @@ model Product {
   cashbackClaims CashbackClaim[]
   missingCashbackTickets MissingCashbackTicket[]
   clicks         ProductClick[]
+  reviewRequests ReviewRequest[]
 
   @@index([storeId])
   @@index([categoryId])
@@ -280,4 +283,32 @@ model ContactMessage {
   message   String
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+enum ReviewRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Represents a Sub-Admin review request to approve or feature a product
+model ReviewRequest {
+  id             String              @id @default(cuid())
+  productId      String
+  product        Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  requestedById  String
+  requestedBy    User                @relation("SubAdminReviewRequests", fields: [requestedById], references: [id], onDelete: Cascade)
+  note           String              // Marketing or urgency reason
+  suggestedRank  Int?                // Sub-admin requested rank position
+  status         ReviewRequestStatus @default(PENDING)
+  reviewedById   String?
+  reviewedBy     User?               @relation("AdminReviewedReviewRequests", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewNote     String?             // Main admin feedback or decline reason
+  approvedRank   Int?                // Final assigned rank
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([productId])
+  @@index([requestedById])
+  @@index([status])
 }

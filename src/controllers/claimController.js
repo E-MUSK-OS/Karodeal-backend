@@ -1,5 +1,6 @@
 import { prisma } from '../utils/db.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { emitClaimsChange } from '../utils/socket.js';
 
 export const submitClaim = async (req, res) => {
   try {
@@ -54,6 +55,11 @@ export const submitClaim = async (req, res) => {
     });
 
     res.status(201).json({ success: true, claim });
+    try {
+      emitClaimsChange('created', { claimId: claim.id, productId: claim.productId });
+    } catch (e) {
+      // ignore
+    }
   } catch (error) {
     console.error('Error submitting claim:', error);
     res.status(500).json({ error: 'Failed to submit claim' });
@@ -221,6 +227,11 @@ export const updateClaimStatus = async (req, res) => {
         });
       });
 
+      try {
+        emitClaimsChange('updated', { claimId: id, status: 'APPROVED', productId: existingClaim.productId });
+      } catch (e) {
+        // ignore
+      }
       return res.json({ success: true, message: 'Claim approved and wallet updated' });
     } else {
       // Just update status to REJECTED
@@ -231,6 +242,11 @@ export const updateClaimStatus = async (req, res) => {
           adminNote: trimmedAdminNote
         }
       });
+      try {
+        emitClaimsChange('updated', { claimId: id, status: 'REJECTED', productId: existingClaim.productId });
+      } catch (e) {
+        // ignore
+      }
       return res.json({ success: true, claim });
     }
   } catch (error) {

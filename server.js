@@ -15,8 +15,11 @@ import transactionRoutes from './src/routes/transactionRoutes.js';
 import adminRoutes from './src/routes/adminRoutes.js';
 import newsletterRoutes from './src/routes/newsletterRoutes.js';
 import contactRoutes from './src/routes/contactRoutes.js';
+import reviewRequestRoutes from './src/routes/reviewRequestRoutes.js';
+import billingRoutes from './src/routes/billingRoutes.js';
 import { initCronJobs } from './src/utils/cronJobs.js';
 
+// Socket and server initialization - star products contiguous rank logic
 const app = express();
 const server = http.createServer(app);
 const io = initSocket(server);
@@ -57,6 +60,9 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/newsletter', newsletterRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/review-requests', reviewRequestRoutes);
+app.use('/api/star-requests', reviewRequestRoutes);
+app.use('/api/billing', billingRoutes);
 
 if (!process.env.VERCEL) {
   initCronJobs();

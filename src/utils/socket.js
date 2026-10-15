@@ -32,3 +32,36 @@ export const emitProductsChange = (action, payload = null) => {
     });
   }
 };
+
+export const emitReviewRequestChange = (action, payload = null) => {
+  if (io) {
+    io.emit('review_requests:changed', {
+      action,
+      payload,
+      timestamp: Date.now()
+    });
+    io.emit('star_requests:changed', {
+      action,
+      payload,
+      timestamp: Date.now()
+    });
+  }
+};
+
+export const emitStarRequestChange = emitReviewRequestChange;
+
+export const emitClaimsChange = (action, payload = null) => {
+  if (io) {
+    io.emit('claims:changed', {
+      action,
+      payload,
+      timestamp: Date.now()
+    });
+    io.emit('billing:changed', {
+      action,
+      payload,
+      timestamp: Date.now()
+    });
+  }
+};
+

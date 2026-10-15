@@ -1,5 +1,6 @@
 import { prisma } from '../utils/db.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { emitClaimsChange } from '../utils/socket.js';
 
 /**
  * Submit a new missing cashback ticket
@@ -339,6 +340,12 @@ export const updateTicketStatus = async (req, res) => {
             }
           });
         });
+
+        try {
+          emitClaimsChange('updated', { ticketId: id, status: 'RESOLVED', productId: existingTicket.productId });
+        } catch (e) {
+          // ignore
+        }
 
         return res.json({ 
           success: true, 
