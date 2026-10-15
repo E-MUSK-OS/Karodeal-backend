@@ -298,6 +298,9 @@ model ReviewRequest {
   product        Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
   requestedById  String
   requestedBy    User                @relation("SubAdminReviewRequests", fields: [requestedById], references: [id], onDelete: Cascade)
+  requestType    String?             // e.g. "Order Increase", "Order + Reviews Increase", or custom
+  orderQty       Int?                // Requested QTY of orders
+  reviewQty      Int?                // Requested QTY of reviews
   note           String              // Marketing or urgency reason
   suggestedRank  Int?                // Sub-admin requested rank position
   status         ReviewRequestStatus @default(PENDING)

@@ -9,6 +9,7 @@ import {
   getAdminProducts,
   trackProductClick,
   reorderProducts,
+  compactRanks,
   getProductsSyncState,
   togglePinProduct
 } from '../controllers/productController.js';
@@ -19,6 +20,7 @@ const router = express.Router();
 // Admin-only routes
 router.get('/admin', requireAuth, requireAdmin, getAdminProducts);
 router.put('/reorder', requireAuth, requireMainAdmin, reorderProducts);
+router.put('/compact-ranks', requireAuth, requireMainAdmin, compactRanks);
 router.put('/:id/pin', requireAuth, requireAdmin, togglePinProduct);
 router.post('/bulk', requireAuth, requireAdmin, createProductsBulk);
 router.post('/', requireAuth, requireAdmin, createProduct);

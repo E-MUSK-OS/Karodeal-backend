@@ -65,3 +65,6 @@ export const emitClaimsChange = (action, payload = null) => {
   }
 };
 
+export const emitBillingChange = () => emitClaimsChange('billing');
+
+

@@ -419,7 +419,54 @@ export const updateProduct = async (req, res) => {
   }
 };
 
+/**
+ * Ensures all products have strictly contiguous sequential ranks starting from 1 (1, 2, 3, ... N)
+ * with no missing gaps.
+ */
+export const compactProductRanks = async (txOrPrisma = prisma) => {
+  const allProducts = await txOrPrisma.product.findMany({
+    select: { id: true, sortOrder: true },
+    orderBy: [
+      { sortOrder: 'asc' },
+      { createdAt: 'desc' }
+    ]
+  });
+
+  const updates = [];
+  for (let i = 0; i < allProducts.length; i++) {
+    const expectedRank = i + 1;
+    if (allProducts[i].sortOrder !== expectedRank) {
+      updates.push(
+        txOrPrisma.product.update({
+          where: { id: allProducts[i].id },
+          data: { sortOrder: expectedRank }
+        })
+      );
+    }
+  }
+
+  if (updates.length > 0) {
+    await Promise.all(updates);
+  }
+};
+
+// Re-compact all product ranks sequentially starting from 1 (Main Admin only)
+export const compactRanks = async (req, res) => {
+  try {
+    if (req.userRole !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only Main Admin can compact product ranks' });
+    }
+    await compactProductRanks(prisma);
+    emitProductsChange('reorder', {});
+    res.json({ success: true, message: 'All product ranks compacted sequentially starting from 1' });
+  } catch (error) {
+    console.error('Error compacting ranks:', error);
+    res.status(500).json({ error: 'Failed to compact ranks' });
+  }
+};
+
 // Delete a product (Admin only)
+// Automatically shifts subsequent products forward by 1 rank (e.g. #2 becomes #1, #3 becomes #2)
 export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
@@ -437,12 +484,59 @@ export const deleteProduct = async (req, res) => {
     if (existingProduct.image && existingProduct.image.includes('cloudinary.com')) {
       await deleteFromCloudinary(existingProduct.image);
     }
+
+    const deletedSortOrder = existingProduct.sortOrder;
     
-    await prisma.product.delete({
-      where: { id: id }
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete the product
+      await tx.product.delete({
+        where: { id: id }
+      });
+
+      // 2. Shift all subsequent products forward by 1 (decrement sortOrder)
+      if (deletedSortOrder !== undefined && deletedSortOrder !== null) {
+        await tx.product.updateMany({
+          where: {
+            sortOrder: {
+              gt: deletedSortOrder
+            }
+          },
+          data: {
+            sortOrder: {
+              decrement: 1
+            }
+          }
+        });
+      }
+
+      // 3. Compact any lingering gaps to guarantee strictly consecutive ranks: 1, 2, 3 ... N
+      const remainingProducts = await tx.product.findMany({
+        select: { id: true, sortOrder: true },
+        orderBy: [
+          { sortOrder: 'asc' },
+          { createdAt: 'desc' }
+        ]
+      });
+
+      const updates = [];
+      for (let i = 0; i < remainingProducts.length; i++) {
+        const expectedRank = i + 1;
+        if (remainingProducts[i].sortOrder !== expectedRank) {
+          updates.push(
+            tx.product.update({
+              where: { id: remainingProducts[i].id },
+              data: { sortOrder: expectedRank }
+            })
+          );
+        }
+      }
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
     });
-    res.json({ message: 'Product deleted successfully' });
-    emitProductsChange('delete', { id });
+
+    res.json({ message: 'Product deleted successfully and ranks adjusted' });
+    emitProductsChange('delete', { id, deletedSortOrder });
   } catch (error) {
     console.error('Error deleting product:', error);
     res.status(500).json({ error: 'Failed to delete product' });

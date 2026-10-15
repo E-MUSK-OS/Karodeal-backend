@@ -6,7 +6,7 @@ import { emitProductsChange, emitReviewRequestChange } from '../utils/socket.js'
  */
 export const createReviewRequest = async (req, res) => {
   try {
-    const { productId, note, suggestedRank } = req.body;
+    const { productId, note, suggestedRank, requestType, orderQty, reviewQty } = req.body;
     const userId = req.userId;
 
     if (!productId) {
@@ -46,6 +46,9 @@ export const createReviewRequest = async (req, res) => {
       data: {
         productId,
         requestedById: userId,
+        requestType: requestType ? String(requestType).trim() : null,
+        orderQty: (orderQty !== undefined && orderQty !== null && orderQty !== '') ? parseInt(orderQty) : null,
+        reviewQty: (reviewQty !== undefined && reviewQty !== null && reviewQty !== '') ? parseInt(reviewQty) : null,
         note: note.trim(),
         suggestedRank: suggestedRank ? parseInt(suggestedRank) : null,
         status: 'PENDING'

@@ -116,14 +116,14 @@ export const getBillingData = async (req, res) => {
           totalOrderAmount += productSalePrice;
 
           // Billing formula:
-          // If with review: salePrice + 40 Rs
-          // If without review: salePrice
+          // If with review: salePrice + 50 Rs
+          // If without review: salePrice + 20 Rs
           if (isWithoutReview) {
-            const claimBilling = productSalePrice;
+            const claimBilling = productSalePrice + 20;
             withoutReviewCount += 1;
             withoutReviewBilling += claimBilling;
           } else {
-            const claimBilling = productSalePrice + 40;
+            const claimBilling = productSalePrice + 50;
             withReviewCount += 1;
             withReviewBilling += claimBilling;
           }
@@ -146,8 +146,8 @@ export const getBillingData = async (req, res) => {
           image: prod.image,
           salePrice: prod.salePrice,
           originalPrice: prod.originalPrice,
-          withReviewBillingRate: productSalePrice + 40,
-          withoutReviewBillingRate: productSalePrice,
+          withReviewBillingRate: productSalePrice + 50,
+          withoutReviewBillingRate: productSalePrice + 20,
           cashbackWithReviewRate: officialWithReviewRate,
           cashbackWithoutReviewRate: officialWithoutReviewRate,
           storeName: prod.storeRel?.name || 'N/A',
