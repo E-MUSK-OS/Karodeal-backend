@@ -14,17 +14,26 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
  * Ensures that the email is not already registered before sending.
  */
 export const sendOtp = async (req, res) => {
-  const { email } = req.body;
+  const email = (req.body?.email || '').trim().toLowerCase();
   if (!email) return res.status(400).json({ error: 'Email is required' });
 
   try {
     const existingUser = await findUserByEmail(email);
     if (existingUser) return res.status(400).json({ error: 'Email already registered' });
 
-    const code = generateOtpCode();
-    const expiresAt = generateOtpExpiry(10);
+    // Reuse existing valid OTP if generated recently (>5 min remaining) to prevent race conditions on resend
+    const existingOtp = await findOtpByEmail(email);
+    let code;
+    let expiresAt;
 
-    await upsertOtp(email, code, expiresAt);
+    if (existingOtp && existingOtp.expiresAt && new Date(existingOtp.expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
+      code = existingOtp.otp;
+      expiresAt = existingOtp.expiresAt;
+    } else {
+      code = generateOtpCode();
+      expiresAt = generateOtpExpiry(10);
+      await upsertOtp(email, code, expiresAt);
+    }
 
     if (transporter) {
       const emailText = `Hi there,\n\nWe received a request to log in to your KaroDeal account.\n\nYour One-Time Password (OTP) is:\n\n${code}\n\nThis code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.\n\nIf you did not request this login, please ignore this email or contact our support team immediately.\n\nBest regards,\n\nThe KaroDeal Team`;
@@ -63,17 +72,26 @@ export const sendOtp = async (req, res) => {
  * Verifies that the email exists in the database before sending.
  */
 export const sendResetOtp = async (req, res) => {
-  const { email } = req.body;
+  const email = (req.body?.email || '').trim().toLowerCase();
   if (!email) return res.status(400).json({ error: 'Email is required' });
 
   try {
     const existingUser = await findUserByEmail(email);
     if (!existingUser) return res.status(404).json({ error: 'No account found with that email address.' });
 
-    const code = generateOtpCode();
-    const expiresAt = generateOtpExpiry(10);
+    // Reuse existing valid OTP if generated recently to prevent invalidating in-flight emails
+    const existingOtp = await findOtpByEmail(email);
+    let code;
+    let expiresAt;
 
-    await upsertOtp(email, code, expiresAt);
+    if (existingOtp && existingOtp.expiresAt && new Date(existingOtp.expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
+      code = existingOtp.otp;
+      expiresAt = existingOtp.expiresAt;
+    } else {
+      code = generateOtpCode();
+      expiresAt = generateOtpExpiry(10);
+      await upsertOtp(email, code, expiresAt);
+    }
 
     if (transporter) {
       const emailText = `Hi ${existingUser.name || 'there'},\n\nWe received a request to reset the password for your KaroDeal account.\n\nYour One-Time Password (OTP) for password reset is:\n\n${code}\n\nThis code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.\n\nIf you did not request a password reset, please ignore this email or contact our support team immediately.\n\nBest regards,\n\nThe KaroDeal Team`;
@@ -113,7 +131,12 @@ export const sendResetOtp = async (req, res) => {
  * creates the user record, and returns a JSON Web Token (JWT) for authentication.
  */
 export const signup = async (req, res) => {
-  const { name, email, mobile, password, otp } = req.body;
+  const email = (req.body?.email || '').trim().toLowerCase();
+  const password = req.body?.password || '';
+  const name = (req.body?.name || '').trim();
+  const mobile = req.body?.mobile ? String(req.body.mobile).trim() : null;
+  const otp = String(req.body?.otp || '').trim();
+
   if (!email || !password || !otp) return res.status(400).json({ error: 'Email, password, and OTP are required' });
 
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
@@ -124,8 +147,8 @@ export const signup = async (req, res) => {
   try {
     const otpRecord = await findOtpByEmail(email);
     if (!otpRecord) return res.status(400).json({ error: 'No OTP found for this email' });
-    if (otpRecord.otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
-    if (new Date() > otpRecord.expiresAt) return res.status(400).json({ error: 'OTP has expired' });
+    if (String(otpRecord.otp).trim() !== otp) return res.status(400).json({ error: 'Invalid OTP' });
+    if (new Date() > new Date(otpRecord.expiresAt)) return res.status(400).json({ error: 'OTP has expired' });
 
     const existingUser = await findUserByEmail(email);
     if (existingUser) return res.status(400).json({ error: 'Email already exists' });
@@ -195,7 +218,7 @@ export const googleLogin = async (req, res) => {
     }
 
     const payload = await googleRes.json();
-    const email = payload.email;
+    const email = (payload.email || '').trim().toLowerCase();
     const name = payload.name || payload.given_name || email.split('@')[0];
     const emailVerified = payload.email_verified;
 
@@ -210,12 +233,19 @@ export const googleLogin = async (req, res) => {
         return res.status(400).json({ error: 'Email already registered. Please log in.' });
       }
 
-      // Generate 6-digit OTP
-      const code = generateOtpCode();
-      const expiresAt = generateOtpExpiry(10);
-      
-      // Store OTP in database
-      await upsertOtp(email, code, expiresAt);
+      // Reuse existing valid OTP if generated recently to prevent invalidating in-flight emails
+      const existingOtp = await findOtpByEmail(email);
+      let code;
+      let expiresAt;
+
+      if (existingOtp && existingOtp.expiresAt && new Date(existingOtp.expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
+        code = existingOtp.otp;
+        expiresAt = existingOtp.expiresAt;
+      } else {
+        code = generateOtpCode();
+        expiresAt = generateOtpExpiry(10);
+        await upsertOtp(email, code, expiresAt);
+      }
 
       // Send OTP via email
       if (transporter) {
@@ -285,14 +315,17 @@ export const googleLogin = async (req, res) => {
 };
 
 export const verifyGoogleOtp = async (req, res) => {
-  const { email, otp, name } = req.body;
+  const email = (req.body?.email || '').trim().toLowerCase();
+  const otp = String(req.body?.otp || '').trim();
+  const name = (req.body?.name || '').trim();
+
   if (!email || !otp) return res.status(400).json({ error: 'Email and OTP are required' });
 
   try {
     const otpRecord = await findOtpByEmail(email);
     if (!otpRecord) return res.status(400).json({ error: 'No OTP found for this email' });
-    if (otpRecord.otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
-    if (new Date() > otpRecord.expiresAt) return res.status(400).json({ error: 'OTP has expired' });
+    if (String(otpRecord.otp).trim() !== otp) return res.status(400).json({ error: 'Invalid OTP' });
+    if (new Date() > new Date(otpRecord.expiresAt)) return res.status(400).json({ error: 'OTP has expired' });
 
     let user = await findUserByEmail(email);
     if (!user) {
@@ -399,14 +432,16 @@ export const getProfile = async (req, res) => {
  * Verifies the OTP for password reset and issues a temporary JWT reset token.
  */
 export const verifyResetOtp = async (req, res) => {
-  const { email, otp } = req.body;
+  const email = (req.body?.email || '').trim().toLowerCase();
+  const otp = String(req.body?.otp || '').trim();
+
   if (!email || !otp) return res.status(400).json({ error: 'Email and OTP are required' });
 
   try {
     const otpRecord = await findOtpByEmail(email);
     if (!otpRecord) return res.status(400).json({ error: 'No OTP found for this email' });
-    if (otpRecord.otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
-    if (new Date() > otpRecord.expiresAt) return res.status(400).json({ error: 'OTP has expired' });
+    if (String(otpRecord.otp).trim() !== otp) return res.status(400).json({ error: 'Invalid OTP' });
+    if (new Date() > new Date(otpRecord.expiresAt)) return res.status(400).json({ error: 'OTP has expired' });
 
     const user = await findUserByEmail(email);
     if (!user) return res.status(404).json({ error: 'User not found' });

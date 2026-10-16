@@ -24,6 +24,7 @@ const app = express();
 const server = http.createServer(app);
 const io = initSocket(server);
 app.set('io', io);
+app.set('trust proxy', 1);
 
 const PORT = process.env.PORT || 5000;
 
