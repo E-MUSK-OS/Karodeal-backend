@@ -4,7 +4,9 @@ import {
   getReviewRequests,
   getStarStats,
   approveReviewRequest,
-  declineReviewRequest
+  declineReviewRequest,
+  updateReviewRequest,
+  deleteReviewRequest
 } from '../controllers/reviewRequestController.js';
 import { requireAuth, requireAdmin, requireMainAdmin } from '../middleware/auth.js';
 
@@ -18,6 +20,12 @@ router.get('/star-stats', requireAuth, requireAdmin, getStarStats);
 
 // Submit a review request (Sub-Admin or Admin)
 router.post('/', requireAuth, requireAdmin, createReviewRequest);
+
+// Update a review request (Sub-Admin for own request, or Main Admin)
+router.put('/:id', requireAuth, requireAdmin, updateReviewRequest);
+
+// Delete a review request (Sub-Admin for own request, or Main Admin)
+router.delete('/:id', requireAuth, requireAdmin, deleteReviewRequest);
 
 // Approve a review request (Main Admin only)
 router.put('/:id/approve', requireAuth, requireMainAdmin, approveReviewRequest);

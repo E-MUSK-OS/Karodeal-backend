@@ -413,9 +413,177 @@ export const declineReviewRequest = async (req, res) => {
   }
 };
 
+/**
+ * Update a review request (Sub-Admin for own request, or Main Admin)
+ * When updated, status resets to PENDING so Main Admin can re-approve or decline it.
+ */
+export const updateReviewRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { requestType, orderQty, reviewQty, note, suggestedRank } = req.body;
+    const isSubAdmin = req.userRole === 'SUB_ADMIN';
+    const userId = req.userId;
+
+    const request = await prisma.reviewRequest.findUnique({
+      where: { id },
+      include: { product: true }
+    });
+
+    if (!request) {
+      return res.status(404).json({ error: 'Review request not found' });
+    }
+
+    // Sub-Admin can only update their own requests
+    if (isSubAdmin && request.requestedById !== userId) {
+      return res.status(403).json({ error: 'You are not authorized to edit this review request' });
+    }
+
+    if (!note || !note.trim()) {
+      return res.status(400).json({ error: 'Please provide notes/reason for the review request' });
+    }
+
+    const wasApproved = request.status === 'APPROVED';
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // If previously approved, revert the product's pinned status since it's back to pending review
+      if (wasApproved) {
+        await tx.product.update({
+          where: { id: request.productId },
+          data: {
+            isPinned: false,
+            updatedAt: new Date()
+          }
+        });
+      }
+
+      // Update request details and reset status to PENDING
+      return await tx.reviewRequest.update({
+        where: { id },
+        data: {
+          requestType: requestType ? String(requestType).trim() : null,
+          orderQty: (orderQty !== undefined && orderQty !== null && orderQty !== '') ? parseInt(orderQty) : null,
+          reviewQty: (reviewQty !== undefined && reviewQty !== null && reviewQty !== '') ? parseInt(reviewQty) : null,
+          note: note.trim(),
+          suggestedRank: suggestedRank ? parseInt(suggestedRank) : request.suggestedRank,
+          status: 'PENDING',
+          reviewedById: null,
+          reviewNote: null,
+          approvedRank: null,
+          updatedAt: new Date()
+        },
+        include: {
+          product: {
+            select: {
+              id: true,
+              title: true,
+              image: true,
+              sortOrder: true,
+              isPinned: true,
+              originalPrice: true,
+              salePrice: true,
+              storeRel: { select: { id: true, name: true, logoUrl: true } }
+            }
+          },
+          requestedBy: {
+            select: { id: true, name: true, email: true, role: true }
+          },
+          reviewedBy: {
+            select: { id: true, name: true, email: true }
+          }
+        }
+      });
+    });
+
+    if (wasApproved) {
+      emitProductsChange('pin_toggle', {
+        productId: request.productId,
+        isPinned: false
+      });
+    }
+
+    emitReviewRequestChange('updated', updated);
+
+    return res.json({
+      success: true,
+      message: 'Review request updated and returned to Pending review for Main Admin.',
+      request: updated
+    });
+  } catch (error) {
+    console.error('Error updating review request:', error);
+    return res.status(500).json({ error: 'Failed to update review request' });
+  }
+};
+
+/**
+ * Delete a review request (Sub-Admin for own request, or Main Admin)
+ */
+export const deleteReviewRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isSubAdmin = req.userRole === 'SUB_ADMIN';
+    const userId = req.userId;
+
+    const request = await prisma.reviewRequest.findUnique({
+      where: { id },
+      include: { product: true }
+    });
+
+    if (!request) {
+      return res.status(404).json({ error: 'Review request not found' });
+    }
+
+    // Sub-Admin can only delete their own requests
+    if (isSubAdmin && request.requestedById !== userId) {
+      return res.status(403).json({ error: 'You are not authorized to delete this review request' });
+    }
+
+    const wasApproved = request.status === 'APPROVED';
+    const productId = request.productId;
+
+    await prisma.$transaction(async (tx) => {
+      // If request was approved, unpin product
+      if (wasApproved) {
+        await tx.product.update({
+          where: { id: productId },
+          data: {
+            isPinned: false,
+            updatedAt: new Date()
+          }
+        });
+      }
+
+      await tx.reviewRequest.delete({
+        where: { id }
+      });
+    });
+
+    if (wasApproved) {
+      emitProductsChange('pin_toggle', {
+        productId,
+        isPinned: false
+      });
+    }
+
+    emitReviewRequestChange('deleted', {
+      requestId: id,
+      productId
+    });
+
+    return res.json({
+      success: true,
+      message: 'Review request deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting review request:', error);
+    return res.status(500).json({ error: 'Failed to delete review request' });
+  }
+};
+
 // Backwards-compatible aliases
 export const createStarRequest = createReviewRequest;
 export const getStarRequests = getReviewRequests;
 export const getStarRequestsStats = getStarStats;
 export const approveStarRequest = approveReviewRequest;
 export const declineStarRequest = declineReviewRequest;
+export const updateStarRequest = updateReviewRequest;
+export const deleteStarRequest = deleteReviewRequest;
