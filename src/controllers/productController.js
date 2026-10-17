@@ -5,6 +5,16 @@ import { emitProductsChange } from '../utils/socket.js';
 import { mixProductsByStore } from '../utils/productMixer.js';
 const prisma = new PrismaClient();
 
+// Helper to sanitize junk modal/dialog scraper prefixes from product titles
+export const cleanTitle = (rawTitle) => {
+  if (!rawTitle) return '';
+  return String(rawTitle)
+    .replace(/^This is a modal window\.\s*/i, '')
+    .replace(/^Beginning of dialog window\.\s*/i, '')
+    .replace(/^Escape will cancel and close the window\.\s*/i, '')
+    .trim();
+};
+
 // Get all products (Public - Store balanced mix + User variety)
 export const getProducts = async (req, res) => {
   try {
@@ -46,13 +56,15 @@ export const getProducts = async (req, res) => {
       }
     });
 
+    const cleanedProducts = products.map(p => ({ ...p, title: cleanTitle(p.title) }));
+
     // If client specifically requests raw unmixed master order (e.g. ?raw=true)
     if (raw === 'true' || raw === '1') {
-      return res.json(products);
+      return res.json(cleanedProducts);
     }
 
     // Apply Store-Balanced Mixing & User Session Variety
-    const mixedProducts = mixProductsByStore(products, seed);
+    const mixedProducts = mixProductsByStore(cleanedProducts, seed);
     res.json(mixedProducts);
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -86,7 +98,8 @@ export const getAdminProducts = async (req, res) => {
         createdBy: { select: { id: true, name: true, email: true, role: true } }
       }
     });
-    res.json(products);
+    const cleanedProducts = products.map(p => ({ ...p, title: cleanTitle(p.title) }));
+    res.json(cleanedProducts);
   } catch (error) {
     console.error('Error fetching admin products:', error);
     res.status(500).json({ error: 'Failed to fetch admin products' });
@@ -107,6 +120,7 @@ export const getProductBySlug = async (req, res) => {
     if (!product || !product.isActive || (product.expiresAt && product.expiresAt <= new Date())) {
       return res.status(404).json({ error: 'Product not found or inactive' });
     }
+    product.title = cleanTitle(product.title);
     res.json(product);
   } catch (error) {
     console.error('Error fetching product:', error);
@@ -123,7 +137,7 @@ export const createProduct = async (req, res) => {
       imageUrl = await uploadToCloudinary(imageUrl, 'products');
     }
 
-    const normalizedTitle = productData.title ? productData.title.trim() : '';
+    const normalizedTitle = cleanTitle(productData.title);
     if (!normalizedTitle) {
       return res.status(400).json({ error: 'Title is required' });
     }
@@ -240,7 +254,7 @@ export const createProductsBulk = async (req, res) => {
         return res.status(400).json({ error: 'You must have at least one Store and Category created in the system before importing products.' });
       }
 
-      const productTitle = productData.title || `Custom Deal ${Date.now()}`;
+      const productTitle = cleanTitle(productData.title) || `Custom Deal ${Date.now()}`;
 
       // Check for duplicate product (same title and store)
       const existingProduct = await prisma.product.findFirst({
@@ -297,7 +311,7 @@ export const updateProduct = async (req, res) => {
     
     const updateData = { ...productData };
     if (updateData.title) {
-      const normalizedTitle = updateData.title.trim();
+      const normalizedTitle = cleanTitle(updateData.title);
       const duplicateProduct = await prisma.product.findFirst({
         where: {
           id: { not: id },
