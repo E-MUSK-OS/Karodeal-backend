@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { transporter } from '../utils/email.js';
-import { generateVerificationEmail } from '../utils/emailTemplate.js';
+import { getOtpEmailHtml, getOtpEmailText } from '../utils/emailTemplate.js';
 import { findUserByEmail, createUser, findOtpByEmail, upsertOtp, deleteOtp, updateUser, deleteUser, findAllUsers } from '../models/userModel.js';
 import { generateAuthTokens, generateResetToken, verifyResetToken, JWT_REFRESH_SECRET, JWT_ACCESS_SECRET } from '../utils/jwt.js';
 import { generateOtpCode, generateOtpExpiry } from '../utils/otp.js';
@@ -37,20 +37,12 @@ export const sendOtp = async (req, res) => {
     }
 
     if (transporter) {
-      const { emailHtml, emailText } = generateVerificationEmail({
-        title: 'Account Verification Code',
-        name: 'there',
-        message: 'We received a request to log in or register your KaroDeal account. Please use the verification code below to proceed:',
-        code,
-        actionText: 'Copy Verification Code'
-      });
-
       await transporter.sendMail({
         from: '"Karodeal Auth" <karodeal26@gmail.com>',
         to: email,
         subject: `Your KaroDeal verification code is ${code}`,
-        text: emailText,
-        html: emailHtml
+        text: getOtpEmailText({ greeting: 'Hi there,', message: 'We received a request to log in or register your KaroDeal account.', code }),
+        html: getOtpEmailHtml({ greeting: 'Hi there,', message: 'We received a request to log in or register your KaroDeal account.', code })
       });
     }
 
@@ -88,20 +80,12 @@ export const sendResetOtp = async (req, res) => {
     }
 
     if (transporter) {
-      const { emailHtml, emailText } = generateVerificationEmail({
-        title: 'Password Reset Verification',
-        name: existingUser.name || 'there',
-        message: 'We received a request to reset the password for your KaroDeal account. Use the verification code below to reset your password:',
-        code,
-        actionText: 'Copy Reset Code'
-      });
-
       await transporter.sendMail({
         from: '"Karodeal Auth" <karodeal26@gmail.com>',
         to: email,
         subject: `Your KaroDeal password reset code is ${code}`,
-        text: emailText,
-        html: emailHtml
+        text: getOtpEmailText({ greeting: `Hi ${existingUser.name || 'there'},`, message: 'We received a request to reset the password for your KaroDeal account.', code }),
+        html: getOtpEmailHtml({ greeting: `Hi ${existingUser.name || 'there'},`, message: 'We received a request to reset the password for your KaroDeal account.', code })
       });
     }
 
@@ -236,20 +220,12 @@ export const googleLogin = async (req, res) => {
 
       // Send OTP via email
       if (transporter) {
-        const { emailHtml, emailText } = generateVerificationEmail({
-          title: 'Google Signup Verification',
-          name: name || 'there',
-          message: 'We received a request to create your KaroDeal account using Google. Please use the verification code below to complete your registration:',
-          code,
-          actionText: 'Copy Verification Code'
-        });
-
         await transporter.sendMail({
           from: '"Karodeal Auth" <karodeal26@gmail.com>',
           to: email,
           subject: `Your KaroDeal Google Signup verification code is ${code}`,
-          text: emailText,
-          html: emailHtml
+          text: getOtpEmailText({ greeting: `Hi ${name || 'there'},`, message: 'We received a request to create your KaroDeal account using Google.', code }),
+          html: getOtpEmailHtml({ greeting: `Hi ${name || 'there'},`, message: 'We received a request to create your KaroDeal account using Google.', code })
         });
       }
 
