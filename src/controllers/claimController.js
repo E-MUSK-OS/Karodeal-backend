@@ -7,6 +7,23 @@ export const submitClaim = async (req, res) => {
     const { storeName, productId, orderId, orderAmount, orderDate, claimType } = req.body;
     const isWithReview = claimType !== 'WITHOUT_REVIEW';
 
+    // Compulsory Product Selection Validation
+    if (!productId || productId === 'null' || productId === 'undefined' || !productId.trim()) {
+      return res.status(400).json({ error: 'Please select a product/deal for your cashback claim.' });
+    }
+
+    if (!storeName || !orderId || !orderAmount || !orderDate) {
+      return res.status(400).json({ error: 'All order fields are required.' });
+    }
+
+    // Verify product exists in database
+    const productExists = await prisma.product.findUnique({
+      where: { id: productId.trim() }
+    });
+    if (!productExists) {
+      return res.status(400).json({ error: 'Selected product was not found. Please choose a valid product.' });
+    }
+
     // Check if required files exist
     if (!req.files || !req.files.invoice || !req.files.noReturn) {
       return res.status(400).json({ error: 'Invoice and No-Return screenshots are required.' });
@@ -43,7 +60,7 @@ export const submitClaim = async (req, res) => {
         ticketId,
         userId: req.userId,
         storeName,
-        productId: productId || null,
+        productId: productExists.id,
         orderId,
         orderAmount: parseFloat(orderAmount),
         orderDate: new Date(orderDate),

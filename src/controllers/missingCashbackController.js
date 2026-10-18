@@ -31,7 +31,7 @@ export const submitTicket = async (req, res) => {
   }
 
   // Automatically link to product if provided or if matched with a CashbackClaim
-  let resolvedProductId = productId || null;
+  let resolvedProductId = (productId && productId !== 'null' && productId !== 'undefined') ? String(productId).trim() : null;
   if (!resolvedProductId) {
     const matchedClaim = await prisma.cashbackClaim.findFirst({
       where: { orderId },
@@ -40,6 +40,19 @@ export const submitTicket = async (req, res) => {
     if (matchedClaim?.productId) {
       resolvedProductId = matchedClaim.productId;
     }
+  }
+
+  // Compulsory Product Selection Validation
+  if (!resolvedProductId) {
+    return res.status(400).json({ error: 'Please select a product/deal for your missing cashback ticket.' });
+  }
+
+  // Verify product exists in database
+  const productExists = await prisma.product.findUnique({
+    where: { id: resolvedProductId }
+  });
+  if (!productExists) {
+    return res.status(400).json({ error: 'Selected product was not found. Please choose a valid product.' });
   }
 
   // Generate 6-character random alphanumeric ticketId
@@ -59,7 +72,7 @@ export const submitTicket = async (req, res) => {
         orderId,
         orderAmount: parseFloat(orderAmount),
         userNote,
-        productId: resolvedProductId,
+        productId: productExists.id,
         status: 'PENDING',
         orderScreenshots
       }
@@ -114,6 +127,17 @@ export const updateUserTicket = async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Ticket not found' });
     if (existing.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
     if (existing.status !== 'PENDING') return res.status(400).json({ error: 'Only pending tickets can be edited' });
+    if (productId !== undefined) {
+      if (!productId || productId === 'null' || productId === 'undefined' || !String(productId).trim()) {
+        return res.status(400).json({ error: 'Please select a product/deal for your missing cashback ticket.' });
+      }
+      const productExists = await prisma.product.findUnique({
+        where: { id: String(productId).trim() }
+      });
+      if (!productExists) {
+        return res.status(400).json({ error: 'Selected product was not found. Please choose a valid product.' });
+      }
+    }
 
     const ticket = await prisma.missingCashbackTicket.update({
       where: { id },
@@ -123,7 +147,7 @@ export const updateUserTicket = async (req, res) => {
         orderId,
         orderAmount: parseFloat(orderAmount),
         userNote,
-        ...(productId !== undefined ? { productId: productId || null } : {})
+        ...(productId !== undefined ? { productId: String(productId).trim() } : {})
       }
     });
 
