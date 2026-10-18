@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { transporter } from '../utils/email.js';
+import { generateVerificationEmail } from '../utils/emailTemplate.js';
 import { findUserByEmail, createUser, findOtpByEmail, upsertOtp, deleteOtp, updateUser, deleteUser, findAllUsers } from '../models/userModel.js';
 import { generateAuthTokens, generateResetToken, verifyResetToken, JWT_REFRESH_SECRET, JWT_ACCESS_SECRET } from '../utils/jwt.js';
 import { generateOtpCode, generateOtpExpiry } from '../utils/otp.js';
@@ -36,20 +37,13 @@ export const sendOtp = async (req, res) => {
     }
 
     if (transporter) {
-      const emailText = `Hi there,\n\nWe received a request to log in to your KaroDeal account.\n\nYour One-Time Password (OTP) is:\n\n${code}\n\nThis code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.\n\nIf you did not request this login, please ignore this email or contact our support team immediately.\n\nBest regards,\n\nThe KaroDeal Team`;
-      
-      const emailHtml = `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <p>Hi there,</p>
-          <p>We received a request to log in to your KaroDeal account.</p>
-          <p>Your One-Time Password (OTP) is:</p>
-          <h2 style="font-size: 28px; font-weight: bold; color: #000; letter-spacing: 2px;">${code}</h2>
-          <p>This code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.</p>
-          <p>If you did not request this login, please ignore this email or contact our support team immediately.</p>
-          <br>
-          <p>Best regards,<br><strong>The KaroDeal Team</strong></p>
-        </div>
-      `;
+      const { emailHtml, emailText } = generateVerificationEmail({
+        title: 'Account Verification Code',
+        name: 'there',
+        message: 'We received a request to log in or register your KaroDeal account. Please use the verification code below to proceed:',
+        code,
+        actionText: 'Copy Verification Code'
+      });
 
       await transporter.sendMail({
         from: '"Karodeal Auth" <karodeal26@gmail.com>',
@@ -94,20 +88,13 @@ export const sendResetOtp = async (req, res) => {
     }
 
     if (transporter) {
-      const emailText = `Hi ${existingUser.name || 'there'},\n\nWe received a request to reset the password for your KaroDeal account.\n\nYour One-Time Password (OTP) for password reset is:\n\n${code}\n\nThis code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.\n\nIf you did not request a password reset, please ignore this email or contact our support team immediately.\n\nBest regards,\n\nThe KaroDeal Team`;
-      
-      const emailHtml = `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <p>Hi ${existingUser.name || 'there'},</p>
-          <p>We received a request to reset the password for your KaroDeal account.</p>
-          <p>Your One-Time Password (OTP) for password reset is:</p>
-          <h2 style="font-size: 28px; font-weight: bold; color: #000; letter-spacing: 2px;">${code}</h2>
-          <p>This code is valid for the next 10 minutes. For your security, please do not share this code with anyone, including KaroDeal staff.</p>
-          <p>If you did not request a password reset, please ignore this email or contact our support team immediately.</p>
-          <br>
-          <p>Best regards,<br><strong>The KaroDeal Team</strong></p>
-        </div>
-      `;
+      const { emailHtml, emailText } = generateVerificationEmail({
+        title: 'Password Reset Verification',
+        name: existingUser.name || 'there',
+        message: 'We received a request to reset the password for your KaroDeal account. Use the verification code below to reset your password:',
+        code,
+        actionText: 'Copy Reset Code'
+      });
 
       await transporter.sendMail({
         from: '"Karodeal Auth" <karodeal26@gmail.com>',
@@ -249,19 +236,13 @@ export const googleLogin = async (req, res) => {
 
       // Send OTP via email
       if (transporter) {
-        const emailText = `Hi ${name},\n\nWe received a request to create your KaroDeal account using Google.\n\nYour One-Time Password (OTP) is:\n\n${code}\n\nThis code is valid for the next 10 minutes.\n\nBest regards,\n\nThe KaroDeal Team`;
-        
-        const emailHtml = `
-          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <p>Hi ${name},</p>
-            <p>We received a request to create your KaroDeal account using Google.</p>
-            <p>Your One-Time Password (OTP) is:</p>
-            <h2 style="font-size: 28px; font-weight: bold; color: #000; letter-spacing: 2px;">${code}</h2>
-            <p>This code is valid for the next 10 minutes. For your security, please do not share this code with anyone.</p>
-            <br>
-            <p>Best regards,<br><strong>The KaroDeal Team</strong></p>
-          </div>
-        `;
+        const { emailHtml, emailText } = generateVerificationEmail({
+          title: 'Google Signup Verification',
+          name: name || 'there',
+          message: 'We received a request to create your KaroDeal account using Google. Please use the verification code below to complete your registration:',
+          code,
+          actionText: 'Copy Verification Code'
+        });
 
         await transporter.sendMail({
           from: '"Karodeal Auth" <karodeal26@gmail.com>',
