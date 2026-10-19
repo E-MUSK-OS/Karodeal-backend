@@ -5,10 +5,11 @@
 export const generateOtpEmail = ({ type = 'LOGIN', name = 'there', code }) => {
   const frontendUrl = (process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_API_URL || 'https://karodeal.in').replace(/\/$/, '');
   const copyUrl = `${frontendUrl}/auth/copy?code=${encodeURIComponent(code)}`;
+  const digits = String(code).trim().split('');
 
   let title = 'Account Verification Code';
   let subject = `Your KaroDeal verification code is ${code}`;
-  let message = 'We received a request to log in or verify your KaroDeal account.';
+  let message = 'We received a request to log in or verify your KaroDeal account. Please use the verification code below to proceed securely:';
   let extraNote = '';
 
   if (type === 'FORGOT_PASSWORD') {
@@ -31,11 +32,10 @@ export const generateOtpEmail = ({ type = 'LOGIN', name = 'there', code }) => {
 
 ${message}
 
-Your One-Time Password (OTP) is:
+Code requested:
 ${code}
 
-Click here to copy your code:
-${copyUrl}
+Your verification code is: ${code}
 
 This code is valid for 10 minutes. For your security, do not share this code with anyone.
 
@@ -58,28 +58,29 @@ The KaroDeal Team`;
         Hi ${name},
       </p>
 
-      <p style="margin: 0 0 18px; font-size: 14px; color: #4b5563;">
+      <p style="margin: 0 0 16px; font-size: 14px; color: #4b5563;">
         ${message}
       </p>
 
-      <!-- Code Box with 1-Tap Select -->
-      <div style="background-color: #f9fafb; border: 1px dashed #f96b02; border-radius: 12px; padding: 18px; text-align: center; margin: 18px 0 14px;">
-        <div style="font-size: 11px; font-weight: bold; color: #f96b02; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">
-          One-Time Password (OTP)
+      <!-- Code requested Card with 6-Digit Individual Boxes (1-Tap Copy in Mail) -->
+      <div style="background-color: #f0f4f9; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; margin: 18px 0; text-align: left;">
+        <div style="font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 12px; letter-spacing: -0.2px;">
+          Code requested
         </div>
-        <div style="font-size: 32px; font-weight: 900; letter-spacing: 6px; color: #111827; font-family: 'SF Mono', Consolas, 'Courier New', monospace; user-select: all; -webkit-user-select: all; cursor: pointer;">
-          ${code}
-        </div>
-        <div style="font-size: 11px; color: #6b7280; margin-top: 6px;">
-          (Tap code to select, or click below to copy)
-        </div>
-      </div>
 
-      <!-- Copy Code Button -->
-      <div style="text-align: center; margin: 16px 0 20px;">
-        <a href="${copyUrl}" target="_blank" style="display: inline-block; background-color: #f96b02; color: #ffffff; font-weight: bold; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 10px; box-shadow: 0 2px 6px rgba(249, 107, 2, 0.3);">
-          📋 Copy Code
-        </a>
+        <table border="0" cellpadding="0" cellspacing="6" style="margin: 0 0 10px 0; border-collapse: separate;">
+          <tr>
+            ${digits.map(d => `
+              <td style="width: 40px; height: 48px; background-color: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; text-align: center; vertical-align: middle; font-size: 24px; font-weight: 800; color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; box-shadow: 0 1px 2px rgba(0,0,0,0.06); user-select: all; -webkit-user-select: all;">
+                ${d}
+              </td>
+            `).join('')}
+          </tr>
+        </table>
+
+        <div style="font-size: 12px; color: #64748b; margin-top: 8px;">
+          (Click or double-tap code to copy directly)
+        </div>
       </div>
 
       <div style="background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 10px 12px; margin-top: 16px;">
