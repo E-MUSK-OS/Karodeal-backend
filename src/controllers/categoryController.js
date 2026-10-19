@@ -23,16 +23,19 @@ export const getCategories = async (req, res) => {
 export const createCategory = async (req, res) => {
   try {
     const { name } = req.body;
-    const categorySlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    
-    let imageUrl = null;
-    if (req.file) {
-      imageUrl = await uploadToCloudinary(req.file.buffer, 'categories');
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Category name is required' });
     }
+    if (!req.file) {
+      return res.status(400).json({ error: 'Category image is compulsory' });
+    }
+
+    const categorySlug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const imageUrl = await uploadToCloudinary(req.file.buffer, 'categories');
 
     const category = await prisma.category.create({
       data: {
-        name,
+        name: name.trim(),
         slug: categorySlug,
         image: imageUrl
       }

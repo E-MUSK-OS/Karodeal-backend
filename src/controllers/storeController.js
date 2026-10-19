@@ -18,17 +18,24 @@ export const getStores = async (req, res) => {
 export const createStore = async (req, res) => {
   try {
     const { name, logoUrl } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Store name is required' });
+    }
+    if (!logoUrl || !logoUrl.trim()) {
+      return res.status(400).json({ error: 'Store logo/image is compulsory' });
+    }
+
     const storeSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    let finalLogoUrl = logoUrl;
-    if (logoUrl && logoUrl.startsWith('data:image')) {
-      finalLogoUrl = await uploadToCloudinary(logoUrl, 'stores');
+    let finalLogoUrl = logoUrl.trim();
+    if (finalLogoUrl.startsWith('data:image')) {
+      finalLogoUrl = await uploadToCloudinary(finalLogoUrl, 'stores');
     }
 
     const store = await prisma.store.create({
       data: {
-        name,
+        name: name.trim(),
         slug: storeSlug,
-        logoUrl: finalLogoUrl || null
+        logoUrl: finalLogoUrl
       }
     });
     res.status(201).json(store);
@@ -42,6 +49,13 @@ export const updateStore = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, logoUrl } = req.body;
+
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({ error: 'Store name cannot be empty' });
+    }
+    if (logoUrl !== undefined && !logoUrl.trim()) {
+      return res.status(400).json({ error: 'Store logo/image is compulsory' });
+    }
     
     const existingStore = await prisma.store.findUnique({ where: { id: id } });
     if (!existingStore) {

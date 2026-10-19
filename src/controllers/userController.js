@@ -22,19 +22,10 @@ export const sendOtp = async (req, res) => {
     const existingUser = await findUserByEmail(email);
     if (existingUser) return res.status(400).json({ error: 'Email already registered' });
 
-    // Reuse existing valid OTP if generated recently (>5 min remaining) to prevent race conditions on resend
-    const existingOtp = await findOtpByEmail(email);
-    let code;
-    let expiresAt;
-
-    if (existingOtp && existingOtp.expiresAt && new Date(existingOtp.expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
-      code = existingOtp.otp;
-      expiresAt = existingOtp.expiresAt;
-    } else {
-      code = generateOtpCode();
-      expiresAt = generateOtpExpiry(10);
-      await upsertOtp(email, code, expiresAt);
-    }
+    // Always generate a fresh OTP code and upsert (which immediately overwrites and invalidates any previous OTP)
+    const code = generateOtpCode();
+    const expiresAt = generateOtpExpiry(10);
+    await upsertOtp(email, code, expiresAt);
 
     if (transporter) {
       const emailContent = generateOtpEmail({ type: 'LOGIN', name: 'there', code });
@@ -66,19 +57,10 @@ export const sendResetOtp = async (req, res) => {
     const existingUser = await findUserByEmail(email);
     if (!existingUser) return res.status(404).json({ error: 'No account found with that email address.' });
 
-    // Reuse existing valid OTP if generated recently to prevent invalidating in-flight emails
-    const existingOtp = await findOtpByEmail(email);
-    let code;
-    let expiresAt;
-
-    if (existingOtp && existingOtp.expiresAt && new Date(existingOtp.expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
-      code = existingOtp.otp;
-      expiresAt = existingOtp.expiresAt;
-    } else {
-      code = generateOtpCode();
-      expiresAt = generateOtpExpiry(10);
-      await upsertOtp(email, code, expiresAt);
-    }
+    // Always generate a fresh OTP code and upsert (which immediately overwrites and invalidates any previous OTP)
+    const code = generateOtpCode();
+    const expiresAt = generateOtpExpiry(10);
+    await upsertOtp(email, code, expiresAt);
 
     if (transporter) {
       const emailContent = generateOtpEmail({ type: 'FORGOT_PASSWORD', name: existingUser.name || 'there', code });
@@ -207,18 +189,10 @@ export const googleLogin = async (req, res) => {
       }
 
       // Reuse existing valid OTP if generated recently to prevent invalidating in-flight emails
-      const existingOtp = await findOtpByEmail(email);
-      let code;
-      let expiresAt;
-
-      if (existingOtp && existingOtp.expiresAt && new Date(existingOtp.expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
-        code = existingOtp.otp;
-        expiresAt = existingOtp.expiresAt;
-      } else {
-        code = generateOtpCode();
-        expiresAt = generateOtpExpiry(10);
-        await upsertOtp(email, code, expiresAt);
-      }
+      // Always generate a fresh OTP code and upsert (which immediately overwrites and invalidates any previous OTP)
+      const code = generateOtpCode();
+      const expiresAt = generateOtpExpiry(10);
+      await upsertOtp(email, code, expiresAt);
 
       // Send OTP via email
       if (transporter) {
@@ -547,15 +521,22 @@ export const updateUserRole = async (req, res) => {
 };
 
 /**
- * Deletes a user account (Admin only)
+ * Deletes a user account and all related data across the system (Main Admin only)
  */
 export const deleteUserAccount = async (req, res) => {
   const { id } = req.params;
   try {
+    if (req.userId === id) {
+      return res.status(400).json({ error: 'You cannot delete your own admin account.' });
+    }
+
     await deleteUser(id);
-    res.json({ success: true, message: 'User deleted successfully' });
+    res.json({ success: true, message: 'User and all associated data deleted successfully' });
   } catch (error) {
     console.error('Error deleting user:', error);
+    if (error.message === 'User not found') {
+      return res.status(404).json({ error: 'User not found' });
+    }
     res.status(500).json({ error: 'Server error while deleting user' });
   }
 };

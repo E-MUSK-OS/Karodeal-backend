@@ -10,7 +10,7 @@ export const getAdminStats = async (req, res) => {
       // 1. My Products
       const myProducts = await prisma.product.findMany({
         where: { createdById: req.userId },
-        select: { id: true, storeId: true }
+        select: { id: true, storeId: true, salePrice: true }
       });
       const myProductIds = myProducts.map(p => p.id);
       const myDealsCount = myProductIds.length;
@@ -21,7 +21,29 @@ export const getAdminStats = async (req, res) => {
         where: { productId: { in: myProductIds } }
       }) : 0;
 
-      // 3. Recent Clicks on Sub-Admin's products
+      // 3. Total Billing for Sub-Admin
+      const approvedClaims = myProductIds.length > 0 ? await prisma.cashbackClaim.findMany({
+        where: {
+          productId: { in: myProductIds },
+          status: 'APPROVED'
+        },
+        select: {
+          claimType: true,
+          product: { select: { salePrice: true } }
+        }
+      }) : [];
+
+      let subAdminTotalBilling = 0;
+      approvedClaims.forEach((c) => {
+        const salePrice = Number(c.product?.salePrice) || 0;
+        if (c.claimType === 'WITHOUT_REVIEW') {
+          subAdminTotalBilling += salePrice + 20;
+        } else {
+          subAdminTotalBilling += salePrice + 50;
+        }
+      });
+
+      // 4. Recent Clicks on Sub-Admin's products
       const recentClicks = myProductIds.length > 0 ? await prisma.productClick.findMany({
         where: { productId: { in: myProductIds } },
         orderBy: { createdAt: 'desc' },
@@ -32,7 +54,7 @@ export const getAdminStats = async (req, res) => {
         }
       }) : [];
 
-      // 4. Latest Deals added by Sub-Admin
+      // 5. Latest Deals added by Sub-Admin
       const latestDeals = await prisma.product.findMany({
         where: { createdById: req.userId },
         orderBy: { createdAt: 'desc' },
@@ -53,7 +75,9 @@ export const getAdminStats = async (req, res) => {
         stats: {
           myDealsCount,
           myClicksCount,
-          myStoresCount: myUniqueStoreIds.length
+          myStoresCount: myUniqueStoreIds.length,
+          totalBilling: Math.round(subAdminTotalBilling * 100) / 100,
+          approvedClaimsCount: approvedClaims.length
         },
         latestDeals,
         recentClicks
@@ -82,7 +106,18 @@ export const getAdminStats = async (req, res) => {
       }),
       prisma.cashbackClaim.findMany({
         where: { status: 'PENDING' },
-        select: { product: { select: { cashback: true } } }
+        select: {
+          claimType: true,
+          awardedCashback: true,
+          product: {
+            select: {
+              cashback: true,
+              cashbackWithoutReview: true,
+              cashbackWithReview: true,
+              salePrice: true
+            }
+          }
+        }
       }),
       prisma.missingCashbackTicket.findMany({
         where: { status: 'PENDING' },
@@ -122,7 +157,35 @@ export const getAdminStats = async (req, res) => {
       return sum + Number(cb);
     }, 0);
 
-    const pendingCashbackSum = pendingClaims.reduce((sum, c) => sum + Number(c.product?.cashback || 0), 0);
+    const pendingCashbackSum = pendingClaims.reduce((sum, c) => {
+      let expCashback = 0;
+      if (c.awardedCashback) {
+        expCashback = Number(c.awardedCashback);
+      } else if (c.product) {
+        const isWithoutReview = c.claimType === 'WITHOUT_REVIEW';
+        if (isWithoutReview && c.product.cashbackWithoutReview) {
+          expCashback = Number(c.product.cashbackWithoutReview);
+        } else if (!isWithoutReview && c.product.cashbackWithReview) {
+          expCashback = Number(c.product.cashbackWithReview);
+        } else if (c.product.cashback) {
+          expCashback = isWithoutReview ? (Number(c.product.cashback) / 2) : Number(c.product.cashback);
+        } else if (c.product.salePrice) {
+          const price = Math.round(Number(c.product.salePrice) || 0);
+          if (price <= 399) {
+            expCashback = isWithoutReview ? 100 : 200;
+          } else if (price <= 599) {
+            expCashback = isWithoutReview ? 150 : 300;
+          } else if (price <= 799) {
+            expCashback = isWithoutReview ? 200 : 400;
+          } else if (price <= 999) {
+            expCashback = isWithoutReview ? 250 : 500;
+          } else {
+            expCashback = isWithoutReview ? 300 : 700;
+          }
+        }
+      }
+      return sum + Number(expCashback || 0);
+    }, 0);
 
     return res.json({
       role: 'ADMIN',
