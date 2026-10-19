@@ -5,6 +5,8 @@
  */
 export const generateOtpEmail = ({ type = 'LOGIN', name = 'there', code }) => {
   const cleanCode = String(code).trim();
+  const frontendUrl = (process.env.NEXT_PUBLIC_FRONTEND_API_URL || 'https://karodeal.in').replace(/\/$/, '');
+  const copyUrl = `${frontendUrl}/auth/copy?code=${encodeURIComponent(cleanCode)}`;
 
   let title = 'Account Verification Code';
   let subject = `Your KaroDeal verification code is ${cleanCode}`;
@@ -34,6 +36,9 @@ ${message}
 Your verification code is:
 ${cleanCode}
 
+Click here to copy your code automatically:
+${copyUrl}
+
 This code is valid for 10 minutes. For your security, do not share this code with anyone.
 
 Best regards,
@@ -61,20 +66,27 @@ The KaroDeal Team`;
         ${message}
       </p>
 
-      <!-- 1-Tap Selectable Code Card (No external redirects) -->
-      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px; margin: 18px 0; text-align: center;">
+      <!-- 1-Tap Selectable Code Card + Copy Button -->
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 22px 20px; margin: 18px 0; text-align: center;">
         <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
           Verification Code
         </div>
 
-        <div style="display: inline-block; background-color: #ffffff; border: 2px dashed #f96b02; border-radius: 10px; padding: 10px 24px; margin: 4px 0;">
+        <div style="display: inline-block; background-color: #ffffff; border: 2px dashed #f96b02; border-radius: 10px; padding: 10px 24px; margin: 4px 0 14px;">
           <span style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; font-size: 32px; font-weight: 900; letter-spacing: 8px; color: #0f172a; user-select: all; -webkit-user-select: all; -moz-user-select: all; -ms-user-select: all; cursor: pointer;">
             ${cleanCode}
           </span>
         </div>
 
-        <div style="font-size: 12px; color: #64748b; margin-top: 10px;">
-          (Double-tap or tap & hold the code to copy)
+        <!-- Copy Code Button -->
+        <div style="margin: 4px 0 8px;">
+          <a href="${copyUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #f96b02; color: #ffffff; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 28px; border-radius: 10px; box-shadow: 0 2px 6px rgba(249, 107, 2, 0.3);">
+            📋 Copy Code
+          </a>
+        </div>
+
+        <div style="font-size: 11px; color: #94a3b8; margin-top: 10px;">
+          (Tap button to copy automatically, or double-click the code above)
         </div>
       </div>
 
@@ -94,5 +106,5 @@ The KaroDeal Team`;
     </div>
   `;
 
-  return { subject, emailHtml, emailText };
+  return { subject, emailHtml, emailText, copyUrl };
 };
