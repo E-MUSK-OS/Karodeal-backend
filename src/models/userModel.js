@@ -67,3 +67,15 @@ export const upsertOtp = async (email, otp, expiresAt) => {
 export const deleteOtp = async (email) => {
   return await prisma.otpVerification.delete({ where: { email } });
 };
+
+export const cleanExpiredOtps = async () => {
+  try {
+    return await prisma.otpVerification.deleteMany({
+      where: {
+        expiresAt: { lt: new Date() }
+      }
+    });
+  } catch (err) {
+    console.error('Error cleaning expired OTPs:', err);
+  }
+};

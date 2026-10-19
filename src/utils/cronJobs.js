@@ -53,6 +53,21 @@ export const initCronJobs = () => {
     }
   });
 
+  // Cleanup expired OTPs every 10 minutes (strictly touches only OtpVerification table, runs silently)
+  cron.schedule('*/10 * * * *', async () => {
+    try {
+      await prisma.otpVerification.deleteMany({
+        where: {
+          expiresAt: {
+            lt: new Date()
+          }
+        }
+      });
+    } catch (error) {
+      // Silent execution - no logs printed
+    }
+  });
+
   console.log('[Cron] Background cleanup & auto-deactivation jobs initialized.');
 };
 
