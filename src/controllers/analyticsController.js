@@ -42,7 +42,7 @@ export const recordSession = async (req, res) => {
     const rawUa = clientUa || req.headers['user-agent'] || '';
     const { deviceType, browser, os } = parseUserAgent(rawUa);
     const ipAddress = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-    const traffic = parseTrafficSource(referrer, queryParams);
+    const traffic = parseTrafficSource(referrer, queryParams, rawUa);
 
     // Check if visitor already exists
     const existingVisitor = await prisma.analyticsVisitor.findUnique({
@@ -128,7 +128,8 @@ export const recordPageEnter = async (req, res) => {
     const safePath = (pagePath && typeof pagePath === 'string') ? pagePath.slice(0, 500) : '/';
     const safeTitle = (pageTitle && typeof pageTitle === 'string') ? pageTitle.slice(0, 300) : null;
     const safeReferrer = (referrer && typeof referrer === 'string') ? referrer.slice(0, 500) : null;
-    const traffic = parseTrafficSource(referrer, queryParams);
+    const rawUa = req.headers['user-agent'] || '';
+    const traffic = parseTrafficSource(referrer, queryParams, rawUa);
 
     const now = new Date();
 
@@ -479,7 +480,9 @@ export const getAnalyticsVisitors = async (req, res) => {
       // Filter by status if specified in query
       const estimatedEndTime = latestVisit?.leftAt || latestVisit?.lastActivityAt || null;
 
-      const fallbackTraffic = latestVisit?.referrer ? parseTrafficSource(latestVisit.referrer) : { source: 'Direct / Chrome Search', medium: 'direct' };
+      const fallbackTraffic = (latestVisit?.referrer || latestSession?.userAgent)
+        ? parseTrafficSource(latestVisit?.referrer || '', {}, latestSession?.userAgent || '')
+        : { source: 'Direct / Chrome Search', medium: 'direct' };
       const trafficSource = latestSession?.trafficSource || v.firstTrafficSource || fallbackTraffic.source;
       const trafficMedium = latestSession?.trafficMedium || v.firstTrafficMedium || fallbackTraffic.medium;
       const utmCampaign = latestSession?.utmCampaign || null;

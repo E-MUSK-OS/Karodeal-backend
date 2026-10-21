@@ -1,18 +1,50 @@
 /**
  * Traffic Source & Acquisition Parser for Karodeal Analytics
- * Categorizes visitors into Direct/Chrome Search, Organic Search, Social Media, Paid Ads, or External Referrals.
+ * Categorizes visitors into Direct/Chrome Search, Organic Search, Social Media (including WhatsApp), Paid Ads, or External Referrals.
  */
-export function parseTrafficSource(rawReferrer = '', queryParams = {}) {
+export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent = '') {
   const params = queryParams && typeof queryParams === 'object' ? queryParams : {};
+  const ua = (userAgent || '').toLowerCase();
   
-  const utmSource = (params.utm_source || '').toLowerCase().trim();
-  const utmMedium = (params.utm_medium || '').toLowerCase().trim();
-  const utmCampaign = (params.utm_campaign || '').trim();
+  // Extract UTM / referral / source parameters (supports utm_source, source, ref, src)
+  const rawSource = params.utm_source || params.source || params.ref || params.src || '';
+  const utmSource = String(rawSource).toLowerCase().trim();
+  const utmMedium = (params.utm_medium || params.medium || '').toLowerCase().trim();
+  const utmCampaign = (params.utm_campaign || params.campaign || '').trim();
   const gclid = params.gclid;
   const fbclid = params.fbclid;
   const ttclid = params.ttclid;
+  const rawRef = String(rawReferrer || '').toLowerCase().trim();
 
-  // 1. Paid Ads Detection (Google Ads, Meta Ads, TikTok Ads, UTM CPC/Paid)
+  // 1. WhatsApp Detection (via Param, Referrer, or In-App Browser User-Agent)
+  const isWaParam = params.wa === '1' || params.wa === 'true' || utmSource === 'wa' || utmSource.includes('whatsapp');
+  const isWaReferrer = /whatsapp|com\.whatsapp|wa\.me/i.test(rawRef);
+  const isWaUA = ua.includes('whatsapp');
+
+  if (isWaParam || isWaReferrer || isWaUA) {
+    return {
+      source: 'WhatsApp',
+      medium: 'social',
+      campaign: utmCampaign || (isWaParam ? 'WhatsApp Share' : null),
+      category: 'SOCIAL'
+    };
+  }
+
+  // 2. In-App Mobile Browser Detection from User-Agent (when native apps strip HTTP referrer headers)
+  if (ua.includes('instagram')) {
+    return { source: 'Instagram', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
+  }
+  if (ua.includes('fban') || ua.includes('fbav') || ua.includes('fb_iab')) {
+    return { source: 'Facebook', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
+  }
+  if (ua.includes('linkedinapp')) {
+    return { source: 'LinkedIn', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
+  }
+  if (ua.includes('twitter')) {
+    return { source: 'Twitter / X', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
+  }
+
+  // 3. Paid Ads Detection (Google Ads, Meta Ads, TikTok Ads, UTM CPC/Paid)
   if (gclid || (utmSource.includes('google') && (utmMedium === 'cpc' || utmMedium === 'paid' || utmMedium === 'ad'))) {
     return {
       source: 'Google Ads',
@@ -50,7 +82,7 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}) {
     };
   }
 
-  // 2. Custom UTM Source without explicit paid medium
+  // 4. Custom UTM / Referral Source
   if (utmSource) {
     let category = 'REFERRAL';
     let medium = utmMedium || 'referral';
@@ -63,7 +95,7 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}) {
       medium = 'email';
     }
 
-    const formatted = utmSource.charAt(0).toUpperCase() + utmSource.slice(1);
+    const formatted = utmSource === 'wa' ? 'WhatsApp' : utmSource.charAt(0).toUpperCase() + utmSource.slice(1);
     return {
       source: formatted,
       medium,
@@ -72,11 +104,8 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}) {
     };
   }
 
-  // 3. Document Referrer Inspection
-  const ref = (rawReferrer || '').toLowerCase().trim();
-
-  // If no referrer exists, user visited directly or opened Chrome / typed URL / private tab
-  if (!ref || ref === 'direct') {
+  // 5. Document Referrer Inspection
+  if (!rawRef || rawRef === 'direct') {
     return {
       source: 'Direct / Chrome Search',
       medium: 'direct',
@@ -87,10 +116,10 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}) {
 
   try {
     let hostname = '';
-    if (ref.startsWith('http://') || ref.startsWith('https://')) {
-      hostname = new URL(ref).hostname.replace(/^www\./, '');
+    if (rawRef.startsWith('http://') || rawRef.startsWith('https://')) {
+      hostname = new URL(rawRef).hostname.replace(/^www\./, '');
     } else {
-      hostname = ref.split('/')[0].replace(/^www\./, '');
+      hostname = rawRef.split('/')[0].replace(/^www\./, '');
     }
 
     // Search Engines (Organic)
@@ -111,6 +140,9 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}) {
     }
 
     // Social Media Platforms
+    if (/whatsapp|com\.whatsapp|wa\.me/i.test(rawRef) || /whatsapp/i.test(hostname)) {
+      return { source: 'WhatsApp', medium: 'social', campaign: null, category: 'SOCIAL' };
+    }
     if (/instagram\.com/i.test(hostname)) {
       return { source: 'Instagram', medium: 'social', campaign: null, category: 'SOCIAL' };
     }
@@ -122,9 +154,6 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}) {
     }
     if (/t\.co|twitter\.com|x\.com/i.test(hostname)) {
       return { source: 'Twitter / X', medium: 'social', campaign: null, category: 'SOCIAL' };
-    }
-    if (/whatsapp\./i.test(hostname)) {
-      return { source: 'WhatsApp', medium: 'social', campaign: null, category: 'SOCIAL' };
     }
     if (/linkedin\.com/i.test(hostname)) {
       return { source: 'LinkedIn', medium: 'social', campaign: null, category: 'SOCIAL' };
