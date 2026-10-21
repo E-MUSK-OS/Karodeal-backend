@@ -80,8 +80,12 @@ export const recordSession = async (req, res) => {
         browser,
         os,
         ipAddress: ipAddress ? ipAddress.slice(0, 45) : undefined,
-        firstTrafficSource: existingVisitor?.firstTrafficSource ? undefined : traffic.source,
-        firstTrafficMedium: existingVisitor?.firstTrafficMedium ? undefined : traffic.medium
+        firstTrafficSource: (traffic.source !== 'Direct / Chrome Search')
+          ? traffic.source
+          : (existingVisitor?.firstTrafficSource || 'Direct / Chrome Search'),
+        firstTrafficMedium: (traffic.source !== 'Direct / Chrome Search')
+          ? traffic.medium
+          : (existingVisitor?.firstTrafficMedium || 'direct')
       }
     });
 
@@ -102,7 +106,10 @@ export const recordSession = async (req, res) => {
       },
       update: {
         lastActivityAt: new Date(),
-        isLive: true
+        isLive: true,
+        trafficSource: (traffic.source !== 'Direct / Chrome Search') ? traffic.source : undefined,
+        trafficMedium: (traffic.source !== 'Direct / Chrome Search') ? traffic.medium : undefined,
+        utmCampaign: traffic.campaign ? traffic.campaign.slice(0, 150) : undefined
       }
     });
 
@@ -144,7 +151,9 @@ export const recordPageEnter = async (req, res) => {
         firstTrafficMedium: traffic.medium
       },
       update: {
-        lastVisitAt: now
+        lastVisitAt: now,
+        firstTrafficSource: (traffic.source !== 'Direct / Chrome Search') ? traffic.source : undefined,
+        firstTrafficMedium: (traffic.source !== 'Direct / Chrome Search') ? traffic.medium : undefined
       }
     });
 
@@ -164,7 +173,10 @@ export const recordPageEnter = async (req, res) => {
       update: {
         lastActivityAt: now,
         isLive: true,
-        pageCount: { increment: 1 }
+        pageCount: { increment: 1 },
+        trafficSource: (traffic.source !== 'Direct / Chrome Search') ? traffic.source : undefined,
+        trafficMedium: (traffic.source !== 'Direct / Chrome Search') ? traffic.medium : undefined,
+        utmCampaign: traffic.campaign ? traffic.campaign.slice(0, 150) : undefined
       }
     });
 
@@ -308,8 +320,15 @@ export const recordPageExit = async (req, res) => {
 
     const delta = Math.min(Math.max(Number(activeSecondsDelta) || 0, 0), 60);
     const safeElapsed = Math.min(Math.max(Number(elapsedSeconds) || 0, 0), 86400);
-    const finalActiveSeconds = Math.round(visit.activeSeconds + delta);
+    let finalActiveSeconds = Math.round(visit.activeSeconds + delta);
     const finalDurationSeconds = Math.round(Math.max(visit.durationSeconds, safeElapsed));
+    let effectiveDelta = Math.round(delta);
+
+    // If visit had elapsed duration >= 1 but activeSeconds is still 0, ensure at least 1s
+    if (finalActiveSeconds === 0 && finalDurationSeconds >= 1) {
+      finalActiveSeconds = 1;
+      effectiveDelta = Math.max(effectiveDelta, 1);
+    }
     const now = new Date();
 
     await prisma.analyticsPageVisit.update({
@@ -327,17 +346,17 @@ export const recordPageExit = async (req, res) => {
       where: { id: sessionId },
       data: {
         lastActivityAt: now,
-        activeSeconds: { increment: Math.round(delta) },
+        activeSeconds: { increment: effectiveDelta },
         durationSeconds: finalDurationSeconds
       }
     });
 
-    if (delta > 0) {
+    if (effectiveDelta > 0) {
       await prisma.analyticsVisitor.update({
         where: { id: visitorId },
         data: {
           lastVisitAt: now,
-          totalActiveSeconds: { increment: Math.round(delta) }
+          totalActiveSeconds: { increment: effectiveDelta }
         }
       });
     }
@@ -487,6 +506,13 @@ export const getAnalyticsVisitors = async (req, res) => {
       const trafficMedium = latestSession?.trafficMedium || v.firstTrafficMedium || fallbackTraffic.medium;
       const utmCampaign = latestSession?.utmCampaign || null;
 
+      // Compute the most accurate total active seconds for this visitor
+      const visitorTotalActiveSeconds = Math.max(
+        v.totalActiveSeconds || 0,
+        latestVisit?.activeSeconds || 0,
+        (latestVisit?.status === 'ENDED' ? (latestVisit?.durationSeconds || 0) : 0)
+      );
+
       return {
         visitorId: v.id,
         firstVisitAt: v.firstVisitAt,
@@ -494,7 +520,7 @@ export const getAnalyticsVisitors = async (req, res) => {
         totalVisits: v.totalVisits,
         totalPageVisits: v._count.pageVisits,
         totalSessions: v._count.sessions,
-        totalActiveSeconds: v.totalActiveSeconds,
+        totalActiveSeconds: visitorTotalActiveSeconds,
         deviceType: v.deviceType || 'Desktop',
         browser: v.browser || 'Unknown',
         os: v.os || 'Unknown',
@@ -603,7 +629,8 @@ export const getAnalyticsVisitorDetail = async (req, res) => {
       };
     });
 
-    const totalActiveSeconds = visitor.pageVisits.reduce((acc, v) => acc + (v.activeSeconds || 0), 0);
+    const computedPageActive = visitor.pageVisits.reduce((acc, v) => acc + (v.activeSeconds || 0), 0);
+    const totalActiveSeconds = Math.max(visitor.totalActiveSeconds || 0, computedPageActive);
     const totalDurationSeconds = visitor.pageVisits.reduce((acc, v) => acc + (v.durationSeconds || 0), 0);
 
     return res.json({

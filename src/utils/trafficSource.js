@@ -17,15 +17,26 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
   const rawRef = String(rawReferrer || '').toLowerCase().trim();
 
   // 1. WhatsApp Detection (via Param, Referrer, or In-App Browser User-Agent)
-  const isWaParam = params.wa === '1' || params.wa === 'true' || utmSource === 'wa' || utmSource.includes('whatsapp');
-  const isWaReferrer = /whatsapp|com\.whatsapp|wa\.me/i.test(rawRef);
+  const isWaParam = 
+    params.wa === '1' || 
+    params.wa === 'true' || 
+    params.whatsapp === '1' || 
+    params.whatsapp === 'true' || 
+    utmSource === 'wa' || 
+    utmSource === 'whatsapp' ||
+    utmSource.includes('whatsapp') ||
+    String(params.source || '').toLowerCase().includes('whatsapp') ||
+    String(params.ref || '').toLowerCase() === 'wa' ||
+    String(params.ref || '').toLowerCase().includes('whatsapp');
+
+  const isWaReferrer = /whatsapp|com\.whatsapp|wa\.me|w4b/i.test(rawRef);
   const isWaUA = ua.includes('whatsapp');
 
   if (isWaParam || isWaReferrer || isWaUA) {
     return {
       source: 'WhatsApp',
-      medium: 'social',
-      campaign: utmCampaign || (isWaParam ? 'WhatsApp Share' : null),
+      medium: utmMedium || 'social',
+      campaign: utmCampaign || params.campaign || (isWaParam ? 'WhatsApp Marketing' : null),
       category: 'SOCIAL'
     };
   }
