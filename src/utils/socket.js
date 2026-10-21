@@ -67,4 +67,14 @@ export const emitClaimsChange = (action, payload = null) => {
 
 export const emitBillingChange = () => emitClaimsChange('billing');
 
+export const emitAnalyticsChange = (action, payload = null) => {
+  if (io) {
+    io.emit('analytics:changed', {
+      action,
+      payload,
+      timestamp: Date.now()
+    });
+  }
+};
+
 

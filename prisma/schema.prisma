@@ -315,3 +315,80 @@ model ReviewRequest {
   @@index([requestedById])
   @@index([status])
 }
+
+/// Represents an anonymous website visitor
+model AnalyticsVisitor {
+  id                 String               @id // Client UUID
+  firstVisitAt       DateTime             @default(now())
+  lastVisitAt        DateTime             @default(now())
+  totalVisits        Int                  @default(1)
+  totalActiveSeconds Int                  @default(0)
+  deviceType         String?              // 'Desktop', 'Mobile', 'Tablet'
+  browser            String?              // 'Chrome', 'Firefox', 'Safari', etc.
+  os                 String?              // 'Windows', 'Mac OS', 'Android', 'iOS', 'Linux'
+  ipAddress          String?
+  firstTrafficSource String?              // e.g. 'Google Search', 'Meta Ads', 'Instagram', 'Direct / Chrome Search'
+  firstTrafficMedium String?              // 'organic', 'cpc', 'social', 'direct', 'referral'
+  sessions           AnalyticsSession[]
+  pageVisits         AnalyticsPageVisit[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@index([lastVisitAt])
+  @@index([createdAt])
+}
+
+/// Represents an anonymous browsing session (resets after 30 min of inactivity)
+model AnalyticsSession {
+  id                 String               @id // Client Session UUID
+  visitorId          String
+  visitor            AnalyticsVisitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  startedAt          DateTime             @default(now())
+  lastActivityAt     DateTime             @default(now())
+  endedAt            DateTime?
+  pageCount          Int                  @default(1)
+  durationSeconds    Int                  @default(0)
+  activeSeconds      Int                  @default(0)
+  isLive             Boolean              @default(true)
+  userAgent          String?
+  referrer           String?
+  trafficSource      String?              // e.g. 'Google Search', 'Meta Ads', 'Direct / Chrome Search'
+  trafficMedium      String?              // 'organic', 'cpc', 'social', 'direct'
+  utmCampaign        String?
+  pageVisits         AnalyticsPageVisit[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@index([visitorId])
+  @@index([startedAt])
+  @@index([lastActivityAt])
+  @@index([isLive])
+}
+
+/// Represents a single page visit within an anonymous session
+model AnalyticsPageVisit {
+  id                 String           @id // Client UUID for the page visit
+  visitorId          String
+  visitor            AnalyticsVisitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  sessionId          String
+  session            AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  pagePath           String
+  pageTitle          String?
+  referrer           String?
+  enteredAt          DateTime         @default(now())
+  lastActivityAt     DateTime         @default(now())
+  leftAt             DateTime?
+  durationSeconds    Int              @default(0)
+  activeSeconds      Int              @default(0)
+  status             String           @default("ACTIVE") // 'ACTIVE', 'INACTIVE', 'ENDED'
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([visitorId])
+  @@index([sessionId])
+  @@index([status])
+  @@index([pagePath])
+  @@index([enteredAt])
+  @@index([lastActivityAt])
+}
+

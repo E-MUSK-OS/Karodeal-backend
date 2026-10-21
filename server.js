@@ -17,6 +17,7 @@ import newsletterRoutes from './src/routes/newsletterRoutes.js';
 import contactRoutes from './src/routes/contactRoutes.js';
 import reviewRequestRoutes from './src/routes/reviewRequestRoutes.js';
 import billingRoutes from './src/routes/billingRoutes.js';
+import analyticsRoutes from './src/routes/analyticsRoutes.js';
 import { initCronJobs } from './src/utils/cronJobs.js';
 
 // Socket and server initialization - star products contiguous rank logic
@@ -33,6 +34,7 @@ app.use('/uploads', express.static('uploads'));
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+app.use(express.text({ type: ['text/plain', 'application/octet-stream'] }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 app.get('/', (req, res) => {
@@ -64,6 +66,7 @@ app.use('/api/contact', contactRoutes);
 app.use('/api/review-requests', reviewRequestRoutes);
 app.use('/api/star-requests', reviewRequestRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 if (!process.env.VERCEL) {
   initCronJobs();
