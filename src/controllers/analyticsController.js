@@ -637,6 +637,19 @@ export const getAnalyticsVisitors = async (req, res) => {
       let trafficMedium = latestSession?.trafficMedium || v.firstTrafficMedium || fallbackTraffic.medium;
       let utmCampaign = latestSession?.utmCampaign || null;
 
+      // Handle legacy / unparsed android-app: references
+      if (trafficSource === 'android-app:' || trafficSource?.startsWith('android-app')) {
+        const reParsed = parseTrafficSource(latestVisit?.referrer || latestSession?.referrer || '', {}, latestSession?.userAgent || '');
+        if (reParsed && reParsed.source !== 'android-app:' && !reParsed.source.startsWith('android-app')) {
+          trafficSource = reParsed.source;
+          trafficMedium = reParsed.medium;
+          utmCampaign = utmCampaign || reParsed.campaign;
+        } else {
+          trafficSource = 'Google Search';
+          trafficMedium = 'organic';
+        }
+      }
+
       // If filtering by specific source, ensure the badge explicitly shows the matching source
       if (normalizedSource === 'WHATSAPP') {
         const isWa = /whatsapp/i.test(trafficSource || '') || /whatsapp/i.test(trafficMedium || '');

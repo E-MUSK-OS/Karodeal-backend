@@ -154,6 +154,49 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
   }
 
   try {
+    // 6a. Android Native App Referrers (e.g. android-app://com.google.android.googlequicksearchbox)
+    if (rawRef.startsWith('android-app://')) {
+      const appPackage = rawRef.replace('android-app://', '').split('/')[0].toLowerCase();
+
+      // Google App / Discover / Google Search App on Android
+      if (/googlequicksearchbox|quicksearchbox/i.test(appPackage)) {
+        return { source: 'Google Search', medium: 'organic', campaign: 'Google App', category: 'SEARCH' };
+      }
+      if (/whatsapp/i.test(appPackage)) {
+        return { source: 'WhatsApp', medium: 'social', campaign: null, category: 'WHATSAPP' };
+      }
+      if (/instagram/i.test(appPackage)) {
+        return { source: 'Instagram', medium: 'social', campaign: null, category: 'INSTAGRAM' };
+      }
+      if (/facebook|katana|orca/i.test(appPackage)) {
+        return { source: 'Facebook', medium: 'social', campaign: null, category: 'SOCIAL' };
+      }
+      if (/telegram/i.test(appPackage)) {
+        return { source: 'Telegram', medium: 'social', campaign: null, category: 'SOCIAL' };
+      }
+      if (/twitter/i.test(appPackage)) {
+        return { source: 'Twitter / X', medium: 'social', campaign: null, category: 'SOCIAL' };
+      }
+      if (/linkedin/i.test(appPackage)) {
+        return { source: 'LinkedIn', medium: 'social', campaign: null, category: 'SOCIAL' };
+      }
+      if (/gmail|\.gm/i.test(appPackage)) {
+        return { source: 'Gmail', medium: 'email', campaign: null, category: 'EMAIL' };
+      }
+      if (/chrome/i.test(appPackage)) {
+        return { source: 'Direct / Chrome Search', medium: 'direct', campaign: null, category: 'DIRECT' };
+      }
+
+      const rawApp = appPackage.split('.').pop() || 'App';
+      const cleanApp = rawApp.charAt(0).toUpperCase() + rawApp.slice(1);
+      return {
+        source: `${cleanApp} App`,
+        medium: 'referral',
+        campaign: null,
+        category: 'REFERRAL'
+      };
+    }
+
     let hostname = '';
     if (rawRef.startsWith('http://') || rawRef.startsWith('https://')) {
       hostname = new URL(rawRef).hostname.replace(/^www\./, '');
