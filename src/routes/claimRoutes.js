@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { submitClaim, getUserClaims, getAllClaims, updateClaimStatus, updateAwardedCashback } from '../controllers/claimController.js';
-import { requireAuth, requireMainAdmin } from '../middleware/auth.js';
+import { requireAuth, requireModuleAccess } from '../middleware/auth.js';
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -16,9 +16,9 @@ router.use(requireAuth);
 router.post('/', upload.fields([{ name: 'invoice', maxCount: 1 }, { name: 'review', maxCount: 1 }, { name: 'noReturn', maxCount: 1 }]), submitClaim);
 router.get('/', getUserClaims);
 
-// Admin routes (Main Admin only)
-router.get('/admin', requireMainAdmin, getAllClaims);
-router.put('/admin/:id', requireMainAdmin, updateClaimStatus);
-router.put('/admin/:id/cashback', requireMainAdmin, updateAwardedCashback);
+// Admin routes (Main Admin or Sub-Admin with claims permission)
+router.get('/admin', requireModuleAccess('claims'), getAllClaims);
+router.put('/admin/:id', requireModuleAccess('claims', 'update'), updateClaimStatus);
+router.put('/admin/:id/cashback', requireModuleAccess('claims', 'update'), updateAwardedCashback);
 
 export default router;

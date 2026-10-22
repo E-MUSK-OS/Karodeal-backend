@@ -16,66 +16,97 @@ export const getAdminStats = async (req, res) => {
       const myDealsCount = myProductIds.length;
       const myUniqueStoreIds = [...new Set(myProducts.map(p => p.storeId).filter(Boolean))];
 
-      // 2. My Product Clicks
-      const myClicksCount = myProductIds.length > 0 ? await prisma.productClick.count({
-        where: { productId: { in: myProductIds } }
-      }) : 0;
-
-      // 3. Total Billing for Sub-Admin
-      const approvedClaims = myProductIds.length > 0 ? await prisma.cashbackClaim.findMany({
-        where: {
-          productId: { in: myProductIds },
-          status: 'APPROVED'
-        },
-        select: {
-          claimType: true,
-          product: { select: { salePrice: true } }
-        }
-      }) : [];
-
+      let myClicksCount = 0;
       let subAdminTotalBilling = 0;
-      approvedClaims.forEach((c) => {
-        const salePrice = Number(c.product?.salePrice) || 0;
-        if (c.claimType === 'WITHOUT_REVIEW') {
-          subAdminTotalBilling += salePrice + 20;
-        } else {
-          subAdminTotalBilling += salePrice + 50;
-        }
-      });
+      let approvedClaims = [];
+      let recentClicks = [];
+      let latestDeals = [];
 
-      // 4. Recent Clicks on Sub-Admin's products
-      const recentClicks = myProductIds.length > 0 ? await prisma.productClick.findMany({
-        where: { productId: { in: myProductIds } },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        include: {
-          product: { select: { title: true, image: true } },
-          user: { select: { name: true, email: true } }
-        }
-      }) : [];
+      if (myDealsCount > 0) {
+        // Partner sub-admin who added their own deals
+        myClicksCount = await prisma.productClick.count({
+          where: { productId: { in: myProductIds } }
+        });
 
-      // 5. Latest Deals added by Sub-Admin
-      const latestDeals = await prisma.product.findMany({
-        where: { createdById: req.userId },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        select: {
-          id: true,
-          title: true,
-          salePrice: true,
-          cashback: true,
-          createdAt: true,
-          storeRel: { select: { name: true } },
-          categoryRel: { select: { name: true } }
-        }
-      });
+        approvedClaims = await prisma.cashbackClaim.findMany({
+          where: {
+            productId: { in: myProductIds },
+            status: 'APPROVED'
+          },
+          select: {
+            claimType: true,
+            product: { select: { salePrice: true } }
+          }
+        });
+
+        approvedClaims.forEach((c) => {
+          const salePrice = Number(c.product?.salePrice) || 0;
+          if (c.claimType === 'WITHOUT_REVIEW') {
+            subAdminTotalBilling += salePrice + 20;
+          } else {
+            subAdminTotalBilling += salePrice + 50;
+          }
+        });
+
+        recentClicks = await prisma.productClick.findMany({
+          where: { productId: { in: myProductIds } },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          include: {
+            product: { select: { title: true, image: true } },
+            user: { select: { name: true, email: true } }
+          }
+        });
+
+        latestDeals = await prisma.product.findMany({
+          where: { createdById: req.userId },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            title: true,
+            salePrice: true,
+            cashback: true,
+            createdAt: true,
+            storeRel: { select: { name: true } },
+            categoryRel: { select: { name: true } }
+          }
+        });
+      } else {
+        // Manager / Staff Sub-admin who manages platform data
+        myClicksCount = await prisma.productClick.count();
+        recentClicks = await prisma.productClick.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          include: {
+            product: { select: { title: true, image: true } },
+            user: { select: { name: true, email: true } }
+          }
+        });
+        latestDeals = await prisma.product.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            title: true,
+            salePrice: true,
+            cashback: true,
+            createdAt: true,
+            storeRel: { select: { name: true } },
+            categoryRel: { select: { name: true } }
+          }
+        });
+      }
+
+      const totalDeals = myDealsCount > 0 ? myDealsCount : await prisma.product.count();
+      const totalStores = myDealsCount > 0 ? myUniqueStoreIds.length : await prisma.store.count();
 
       return res.json({
         role: 'SUB_ADMIN',
         stats: {
-          myDealsCount,
+          myDealsCount: totalDeals,
           myClicksCount,
-          myStoresCount: myUniqueStoreIds.length,
+          myStoresCount: totalStores,
           totalBilling: Math.round(subAdminTotalBilling * 100) / 100,
           approvedClaimsCount: approvedClaims.length
         },
@@ -210,11 +241,18 @@ export const getAdminStats = async (req, res) => {
   }
 };
 
-// Get product clicks (Filtered for sub-admin to only show clicks on their own products)
+// Get product clicks (Filtered for partner sub-admins if they have their own deals, otherwise show all clicks)
 export const getProductClicks = async (req, res) => {
   try {
     const isSubAdmin = req.userRole === 'SUB_ADMIN';
-    const whereClause = isSubAdmin ? { product: { createdById: req.userId } } : {};
+    let whereClause = {};
+
+    if (isSubAdmin) {
+      const myCount = await prisma.product.count({ where: { createdById: req.userId } });
+      if (myCount > 0) {
+        whereClause = { product: { createdById: req.userId } };
+      }
+    }
 
     const clicks = await prisma.productClick.findMany({
       where: whereClause,

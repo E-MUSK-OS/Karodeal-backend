@@ -1,6 +1,6 @@
 import express from 'express';
 import { createPayoutRequest, getUserPayouts, getAdminPayouts, processPayout } from '../controllers/payoutController.js';
-import { requireAuth, requireMainAdmin } from '../middleware/auth.js';
+import { requireAuth, requireModuleAccess } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -8,8 +8,8 @@ const router = express.Router();
 router.post('/', requireAuth, createPayoutRequest);
 router.get('/history', requireAuth, getUserPayouts);
 
-// Admin routes (Main Admin only)
-router.get('/admin', requireAuth, requireMainAdmin, getAdminPayouts);
-router.put('/admin/:id', requireAuth, requireMainAdmin, processPayout);
+// Admin routes (Main Admin or Sub-Admin with payouts permission)
+router.get('/admin', requireModuleAccess('payouts'), getAdminPayouts);
+router.put('/admin/:id', requireModuleAccess('payouts', 'update'), processPayout);
 
 export default router;
