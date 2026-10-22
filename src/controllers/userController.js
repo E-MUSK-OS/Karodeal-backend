@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { transporter } from '../utils/email.js';
 import { generateOtpEmail } from '../utils/emailTemplate.js';
-import { findUserByEmail, createUser, findOtpByEmail, upsertOtp, deleteOtp, updateUser, deleteUser, findAllUsers } from '../models/userModel.js';
+import { findUserByEmail, createUser, findOtpByEmail, upsertOtp, deleteOtp, updateUser, deleteUser, findAllUsers, getSubAdminPermissions, upsertSubAdminPermissions } from '../models/userModel.js';
 import { generateAuthTokens, generateResetToken, verifyResetToken, JWT_REFRESH_SECRET, JWT_ACCESS_SECRET } from '../utils/jwt.js';
 import { generateOtpCode, generateOtpExpiry } from '../utils/otp.js';
 import jwt from 'jsonwebtoken';
@@ -149,7 +149,11 @@ export const login = async (req, res) => {
     });
 
     const { token, refreshToken } = generateAuthTokens(user.id);
-    res.json({ message: 'Login successful', token, refreshToken, user: { id: user.id, name: user.name, email: user.email, mobile: user.mobile, role: user.role, pendingBalance: user.wallet?.pendingBalance || 0, confirmedBalance: user.wallet?.confirmedBalance || 0, availableBalance: user.wallet?.availableBalance || 0 } });
+    let permissions = null;
+    if (user.role === 'SUB_ADMIN') {
+      permissions = await getSubAdminPermissions(user.id);
+    }
+    res.json({ message: 'Login successful', token, refreshToken, user: { id: user.id, name: user.name, email: user.email, mobile: user.mobile, role: user.role, permissions, pendingBalance: user.wallet?.pendingBalance || 0, confirmedBalance: user.wallet?.confirmedBalance || 0, availableBalance: user.wallet?.availableBalance || 0 } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to login' });
@@ -462,8 +466,16 @@ export const changePassword = async (req, res) => {
  * Verifies if the current token belongs to an administrator.
  * Assumes the request has passed the requireAdmin middleware.
  */
-export const verifyAdmin = (req, res) => {
-  res.json({ valid: true, role: req.userRole });
+export const verifyAdmin = async (req, res) => {
+  try {
+    let permissions = null;
+    if (req.userRole === 'SUB_ADMIN') {
+      permissions = await getSubAdminPermissions(req.userId);
+    }
+    res.json({ valid: true, role: req.userRole, permissions });
+  } catch (err) {
+    res.json({ valid: true, role: req.userRole });
+  }
 };
 
 /**
@@ -538,5 +550,35 @@ export const deleteUserAccount = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     res.status(500).json({ error: 'Server error while deleting user' });
+  }
+};
+
+/**
+ * Gets sub-admin permissions (Admin only)
+ */
+export const getSubAdminPermissionsHandler = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const permissions = await getSubAdminPermissions(id);
+    res.json({ success: true, permissions });
+  } catch (error) {
+    console.error('Error fetching sub-admin permissions:', error);
+    res.status(500).json({ error: 'Server error while fetching permissions' });
+  }
+};
+
+/**
+ * Updates sub-admin permissions (Main Admin only)
+ */
+export const updateSubAdminPermissionsHandler = async (req, res) => {
+  const { id } = req.params;
+  const { allowedModules, canAdd, canUpdate, canDelete } = req.body;
+
+  try {
+    const permissions = await upsertSubAdminPermissions(id, { allowedModules, canAdd, canUpdate, canDelete });
+    res.json({ success: true, message: 'Permissions updated successfully', permissions });
+  } catch (error) {
+    console.error('Error updating sub-admin permissions:', error);
+    res.status(500).json({ error: 'Server error while updating permissions' });
   }
 };

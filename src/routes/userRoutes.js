@@ -1,5 +1,9 @@
 import express from 'express';
-import { sendOtp, sendResetOtp, verifyResetOtp, signup, login, googleLogin, verifyGoogleOtp, getProfile, updateProfile, resetPassword, changePassword, verifyAdmin, getAllUsers, deleteUserAccount, updateUserRole } from '../controllers/userController.js';
+import { 
+  sendOtp, sendResetOtp, verifyResetOtp, signup, login, googleLogin, verifyGoogleOtp, 
+  getProfile, updateProfile, resetPassword, changePassword, verifyAdmin, getAllUsers, 
+  deleteUserAccount, updateUserRole, getSubAdminPermissionsHandler, updateSubAdminPermissionsHandler 
+} from '../controllers/userController.js';
 import { requireAuth, requireAdmin, requireMainAdmin } from '../middleware/auth.js';
 import rateLimit from 'express-rate-limit';
 
@@ -29,6 +33,8 @@ router.put('/change-password', requireAuth, changePassword);
 
 // Admin Routes
 router.get('/verify-admin', requireAdmin, verifyAdmin);
+router.get('/sub-admin-permissions/:id', requireAdmin, getSubAdminPermissionsHandler);
+router.put('/sub-admin-permissions/:id', requireMainAdmin, updateSubAdminPermissionsHandler);
 router.get('/', requireMainAdmin, getAllUsers);
 router.put('/role/:id', requireMainAdmin, updateUserRole);
 router.delete('/:id', requireMainAdmin, deleteUserAccount);
