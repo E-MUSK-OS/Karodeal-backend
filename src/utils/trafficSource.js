@@ -11,10 +11,21 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
   const utmSource = String(rawSource).toLowerCase().trim();
   const utmMedium = (params.utm_medium || params.medium || '').toLowerCase().trim();
   const utmCampaign = (params.utm_campaign || params.campaign || '').trim();
+  const utmTerm = String(params.utm_term || params.keyword || params.term || params.q || params.query || '').trim();
   const gclid = params.gclid;
   const fbclid = params.fbclid;
   const ttclid = params.ttclid;
   const rawRef = String(rawReferrer || '').toLowerCase().trim();
+
+  // Extract search query keyword if present in referrer URL (e.g. ?q= or ?query=)
+  let referrerQuery = '';
+  try {
+    if (rawRef.includes('?')) {
+      const refUrl = new URL(rawRef.startsWith('http') ? rawRef : `http://${rawRef}`);
+      referrerQuery = refUrl.searchParams.get('q') || refUrl.searchParams.get('query') || refUrl.searchParams.get('p') || '';
+    }
+  } catch (e) {}
+  const searchKeyword = utmTerm || referrerQuery || null;
 
   // 1. WhatsApp Detection (via Param, Referrer, or In-App Browser User-Agent)
   const isWaParam = 
@@ -44,11 +55,15 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
   // 2. Paid Ads Detection (Google Ads vs Meta Ads vs TikTok / Other Ads)
   // Google Ads (gclid or utm_source google with paid medium)
   if (gclid || (utmSource.includes('google') && ['cpc', 'paid', 'ad', 'ads', 'ppc'].includes(utmMedium))) {
+    const campaignText = utmCampaign 
+      ? (searchKeyword ? `${utmCampaign} [Keyword: ${searchKeyword}]` : utmCampaign)
+      : (searchKeyword ? `Keyword: ${searchKeyword}` : 'Google Search Ads');
     return {
       source: 'Google Ads',
       medium: 'cpc',
-      campaign: utmCampaign || 'Google Search Ads',
-      category: 'GOOGLE_ADS'
+      campaign: campaignText,
+      category: 'GOOGLE_ADS',
+      searchKeyword
     };
   }
 
@@ -160,7 +175,13 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
 
       // Google App / Discover / Google Search App on Android
       if (/googlequicksearchbox|quicksearchbox/i.test(appPackage)) {
-        return { source: 'Google Search', medium: 'organic', campaign: 'Google App', category: 'SEARCH' };
+        return {
+          source: 'Google Search',
+          medium: 'organic',
+          campaign: searchKeyword ? `Keyword: "${searchKeyword}"` : 'Google App',
+          category: 'SEARCH',
+          searchKeyword
+        };
       }
       if (/whatsapp/i.test(appPackage)) {
         return { source: 'WhatsApp', medium: 'social', campaign: null, category: 'WHATSAPP' };
@@ -206,13 +227,31 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
 
     // Search Engines (Organic)
     if (/google\./i.test(hostname)) {
-      return { source: 'Google Search', medium: 'organic', campaign: null, category: 'SEARCH' };
+      return {
+        source: 'Google Search',
+        medium: 'organic',
+        campaign: searchKeyword ? `Keyword: "${searchKeyword}"` : null,
+        category: 'SEARCH',
+        searchKeyword
+      };
     }
     if (/bing\.com/i.test(hostname)) {
-      return { source: 'Bing Search', medium: 'organic', campaign: null, category: 'SEARCH' };
+      return {
+        source: 'Bing Search',
+        medium: 'organic',
+        campaign: searchKeyword ? `Keyword: "${searchKeyword}"` : null,
+        category: 'SEARCH',
+        searchKeyword
+      };
     }
     if (/yahoo\./i.test(hostname)) {
-      return { source: 'Yahoo Search', medium: 'organic', campaign: null, category: 'SEARCH' };
+      return {
+        source: 'Yahoo Search',
+        medium: 'organic',
+        campaign: searchKeyword ? `Keyword: "${searchKeyword}"` : null,
+        category: 'SEARCH',
+        searchKeyword
+      };
     }
     if (/duckduckgo\.com/i.test(hostname)) {
       return { source: 'DuckDuckGo', medium: 'organic', campaign: null, category: 'SEARCH' };

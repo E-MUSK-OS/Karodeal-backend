@@ -807,6 +807,32 @@ export const getAnalyticsVisitorDetail = async (req, res) => {
     const totalActiveSeconds = Math.max(visitor.totalActiveSeconds || 0, computedPageActive);
     const totalDurationSeconds = visitor.pageVisits.reduce((acc, v) => acc + (v.durationSeconds || 0), 0);
 
+    // Identify First Landing Page Chronologically
+    const sortedVisitsChronological = [...visitor.pageVisits].sort((a, b) => new Date(a.enteredAt) - new Date(b.enteredAt));
+    const landingVisit = sortedVisitsChronological[0] || null;
+
+    // Search query / keyword extraction from campaigns or referrer URLs
+    let detectedKeyword = null;
+    for (const session of visitor.sessions) {
+      if (session.utmCampaign && /keyword:|query:|term:/i.test(session.utmCampaign)) {
+        const match = session.utmCampaign.match(/(?:keyword:|query:|term:)\s*["']?([^\]"']+)["']?/i);
+        if (match && match[1]) {
+          detectedKeyword = match[1].trim();
+          break;
+        }
+      }
+      if (session.referrer && session.referrer.includes('?')) {
+        try {
+          const url = new URL(session.referrer.startsWith('http') ? session.referrer : `http://${session.referrer}`);
+          const q = url.searchParams.get('q') || url.searchParams.get('query') || url.searchParams.get('p');
+          if (q) {
+            detectedKeyword = decodeURIComponent(q);
+            break;
+          }
+        } catch (e) {}
+      }
+    }
+
     return res.json({
       visitor: {
         id: visitor.id,
@@ -819,6 +845,12 @@ export const getAnalyticsVisitorDetail = async (req, res) => {
         ipAddress: visitor.ipAddress,
         firstTrafficSource: visitor.firstTrafficSource || (visitor.sessions[0]?.trafficSource) || 'Direct / Chrome Search',
         firstTrafficMedium: visitor.firstTrafficMedium || (visitor.sessions[0]?.trafficMedium) || 'direct',
+        landingPage: landingVisit ? {
+          pagePath: landingVisit.pagePath,
+          pageTitle: landingVisit.pageTitle || landingVisit.pagePath,
+          enteredAt: landingVisit.enteredAt
+        } : null,
+        detectedKeyword,
         createdAt: visitor.createdAt
       },
       summary: {
