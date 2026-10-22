@@ -463,14 +463,32 @@ export const getAnalyticsVisitors = async (req, res) => {
       };
     }
 
-    if (startDate || endDate) {
-      where.lastVisitAt = {};
-      if (startDate) where.lastVisitAt.gte = new Date(startDate);
-      if (endDate) {
-        const endD = new Date(endDate);
-        endD.setHours(23, 59, 59, 999);
-        where.lastVisitAt.lte = endD;
+    // Date filter: defaults to TODAY in Asia/Kolkata (IST) if no date is provided and not explicitly 'ALL'
+    const isExplicitAllTime = req.query.period === 'ALL' || req.query.allTime === 'true';
+
+    let dateGte = null;
+    let dateLte = null;
+
+    if (!isExplicitAllTime) {
+      if (startDate || endDate) {
+        if (startDate) {
+          dateGte = new Date(startDate.includes('T') ? startDate : `${startDate}T00:00:00+05:30`);
+        }
+        if (endDate) {
+          dateLte = new Date(endDate.includes('T') ? endDate : `${endDate}T23:59:59.999+05:30`);
+        }
+      } else {
+        // Default to TODAY in Asia/Kolkata
+        const nowIstStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        dateGte = new Date(`${nowIstStr}T00:00:00+05:30`);
+        dateLte = new Date(`${nowIstStr}T23:59:59.999+05:30`);
       }
+    }
+
+    if (dateGte || dateLte) {
+      where.lastVisitAt = {};
+      if (dateGte) where.lastVisitAt.gte = dateGte;
+      if (dateLte) where.lastVisitAt.lte = dateLte;
     }
 
     // Live Tab filter: only visitors active in the last 90 seconds
@@ -480,6 +498,11 @@ export const getAnalyticsVisitors = async (req, res) => {
 
     if (andConditions.length > 0) {
       where.AND = andConditions;
+    }
+
+    const pageVisitWhere = {};
+    if (where.lastVisitAt) {
+      pageVisitWhere.enteredAt = where.lastVisitAt;
     }
 
     // Fetch total count and visitors in parallel
@@ -507,7 +530,7 @@ export const getAnalyticsVisitors = async (req, res) => {
       prisma.analyticsVisitor.count({
         where: { lastVisitAt: { gte: liveCutoff } }
       }),
-      prisma.analyticsPageVisit.count()
+      prisma.analyticsPageVisit.count({ where: pageVisitWhere })
     ]);
 
     // Format visitor rows with detailed timing and live/inactive/ended logic
