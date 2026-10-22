@@ -41,39 +41,33 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
     };
   }
 
-  // 2. In-App Mobile Browser Detection from User-Agent (when native apps strip HTTP referrer headers)
-  if (ua.includes('instagram')) {
-    return { source: 'Instagram', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
-  }
-  if (ua.includes('fban') || ua.includes('fbav') || ua.includes('fb_iab')) {
-    return { source: 'Facebook', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
-  }
-  if (ua.includes('linkedinapp')) {
-    return { source: 'LinkedIn', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
-  }
-  if (ua.includes('twitter')) {
-    return { source: 'Twitter / X', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
-  }
-
-  // 3. Paid Ads Detection (Google Ads, Meta Ads, TikTok Ads, UTM CPC/Paid)
-  if (gclid || (utmSource.includes('google') && (utmMedium === 'cpc' || utmMedium === 'paid' || utmMedium === 'ad'))) {
+  // 2. Paid Ads Detection (Google Ads vs Meta Ads vs TikTok / Other Ads)
+  // Google Ads (gclid or utm_source google with paid medium)
+  if (gclid || (utmSource.includes('google') && ['cpc', 'paid', 'ad', 'ads', 'ppc'].includes(utmMedium))) {
     return {
       source: 'Google Ads',
       medium: 'cpc',
-      campaign: utmCampaign || 'Google Paid Search',
-      category: 'ADS'
+      campaign: utmCampaign || 'Google Search Ads',
+      category: 'GOOGLE_ADS'
     };
   }
 
-  if (fbclid || (['facebook', 'instagram', 'meta'].some(s => utmSource.includes(s)) && (utmMedium === 'cpc' || utmMedium === 'paid' || utmMedium === 'ads'))) {
+  // Meta Ads (fbclid or facebook/instagram/meta with paid medium)
+  if (
+    fbclid ||
+    (['facebook', 'instagram', 'meta', 'fb', 'insta'].some((s) => utmSource.includes(s)) &&
+      ['cpc', 'paid', 'ads', 'ppc', 'paid_social', 'ad'].includes(utmMedium)) ||
+    (utmCampaign && /meta_ad|fb_ad|insta_ad|facebook_ad/i.test(utmCampaign))
+  ) {
     return {
-      source: 'Meta Ads (FB/Instagram)',
+      source: 'Meta Ads',
       medium: 'paid_social',
       campaign: utmCampaign || 'Meta Paid Ads',
-      category: 'ADS'
+      category: 'META_ADS'
     };
   }
 
+  // TikTok Ads
   if (ttclid || (utmSource.includes('tiktok') && (utmMedium === 'cpc' || utmMedium === 'paid'))) {
     return {
       source: 'TikTok Ads',
@@ -83,6 +77,7 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
     };
   }
 
+  // Generic Paid Ads
   if (utmMedium === 'cpc' || utmMedium === 'ppc' || utmMedium === 'paid' || utmMedium === 'ads' || utmMedium === 'sponsored') {
     const formattedSource = utmSource ? utmSource.charAt(0).toUpperCase() + utmSource.slice(1) + ' Ads' : 'Paid Ads';
     return {
@@ -93,13 +88,46 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
     };
   }
 
-  // 4. Custom UTM / Referral Source
+  // 3. Instagram Organic / In-App Browser Detection
+  if (
+    ua.includes('instagram') ||
+    /instagram\.com|com\.instagram\.android/i.test(rawRef) ||
+    utmSource === 'instagram' ||
+    utmSource === 'insta' ||
+    utmSource.includes('instagram')
+  ) {
+    return {
+      source: 'Instagram',
+      medium: utmMedium || 'social',
+      campaign: utmCampaign || null,
+      category: 'INSTAGRAM'
+    };
+  }
+
+  // 4. Other In-App Mobile Browsers
+  if (ua.includes('fban') || ua.includes('fbav') || ua.includes('fb_iab')) {
+    return { source: 'Facebook', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
+  }
+  if (ua.includes('linkedinapp')) {
+    return { source: 'LinkedIn', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
+  }
+  if (ua.includes('twitter')) {
+    return { source: 'Twitter / X', medium: 'social', campaign: utmCampaign || null, category: 'SOCIAL' };
+  }
+
+  // 5. Custom UTM / Referral Source
   if (utmSource) {
     let category = 'REFERRAL';
     let medium = utmMedium || 'referral';
 
-    if (/facebook|instagram|insta|twitter|x\.com|linkedin|youtube|pinterest|whatsapp|telegram|tiktok|reddit/i.test(utmSource)) {
-      category = (utmSource === 'wa' || /whatsapp/i.test(utmSource)) ? 'WHATSAPP' : 'SOCIAL';
+    if (utmSource === 'wa' || /whatsapp/i.test(utmSource)) {
+      category = 'WHATSAPP';
+      medium = 'social';
+    } else if (utmSource === 'instagram' || utmSource === 'insta' || /instagram/i.test(utmSource)) {
+      category = 'INSTAGRAM';
+      medium = 'social';
+    } else if (/facebook|twitter|x\.com|linkedin|youtube|pinterest|telegram|tiktok|reddit/i.test(utmSource)) {
+      category = 'SOCIAL';
       medium = 'social';
     } else if (/email|newsletter/i.test(utmMedium) || /email/i.test(utmSource)) {
       category = 'EMAIL';
@@ -115,7 +143,7 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
     };
   }
 
-  // 5. Document Referrer Inspection
+  // 6. Document Referrer Inspection
   if (!rawRef || rawRef === 'direct') {
     return {
       source: 'Direct / Chrome Search',
@@ -150,12 +178,14 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
       return { source: 'Search Engine', medium: 'organic', campaign: null, category: 'SEARCH' };
     }
 
-    // Social Media Platforms
+    // WhatsApp
     if (/whatsapp|com\.whatsapp|wa\.me/i.test(rawRef) || /whatsapp/i.test(hostname)) {
       return { source: 'WhatsApp', medium: 'social', campaign: null, category: 'WHATSAPP' };
     }
-    if (/instagram\.com/i.test(hostname)) {
-      return { source: 'Instagram', medium: 'social', campaign: null, category: 'SOCIAL' };
+
+    // Instagram (Organic / Share)
+    if (/instagram\.com|com\.instagram\.android/i.test(hostname) || /instagram/i.test(rawRef)) {
+      return { source: 'Instagram', medium: 'social', campaign: null, category: 'INSTAGRAM' };
     }
     if (/facebook\.com|fb\.me/i.test(hostname)) {
       return { source: 'Facebook', medium: 'social', campaign: null, category: 'SOCIAL' };

@@ -411,11 +411,75 @@ export const getAnalyticsVisitors = async (req, res) => {
             { pageVisits: { some: { referrer: { contains: 'whatsapp', mode: 'insensitive' } } } }
           ]
         });
+      } else if (normalizedSource === 'GOOGLE_ADS') {
+        andConditions.push({
+          OR: [
+            { firstTrafficSource: { contains: 'Google Ads', mode: 'insensitive' } },
+            {
+              AND: [
+                { firstTrafficSource: { contains: 'Google', mode: 'insensitive' } },
+                { firstTrafficMedium: { in: ['cpc', 'paid', 'ad', 'ads', 'ppc'] } }
+              ]
+            },
+            { sessions: { some: { trafficSource: { contains: 'Google Ads', mode: 'insensitive' } } } },
+            {
+              sessions: {
+                some: {
+                  trafficSource: { contains: 'Google', mode: 'insensitive' },
+                  trafficMedium: { in: ['cpc', 'paid', 'ad', 'ads', 'ppc'] }
+                }
+              }
+            }
+          ]
+        });
+      } else if (normalizedSource === 'META_ADS') {
+        andConditions.push({
+          OR: [
+            { firstTrafficSource: { contains: 'Meta Ads', mode: 'insensitive' } },
+            { firstTrafficSource: { contains: 'Facebook Ads', mode: 'insensitive' } },
+            { firstTrafficSource: { contains: 'Instagram Ads', mode: 'insensitive' } },
+            {
+              AND: [
+                { firstTrafficSource: { in: ['Facebook', 'Instagram', 'Meta'] } },
+                { firstTrafficMedium: { in: ['cpc', 'paid_social', 'paid', 'ads'] } }
+              ]
+            },
+            { sessions: { some: { trafficSource: { contains: 'Meta Ads', mode: 'insensitive' } } } },
+            { sessions: { some: { trafficSource: { contains: 'Facebook Ads', mode: 'insensitive' } } } },
+            { sessions: { some: { trafficSource: { contains: 'Instagram Ads', mode: 'insensitive' } } } },
+            { sessions: { some: { trafficMedium: 'paid_social' } } }
+          ]
+        });
+      } else if (normalizedSource === 'INSTAGRAM') {
+        andConditions.push({
+          OR: [
+            {
+              AND: [
+                { firstTrafficSource: { contains: 'Instagram', mode: 'insensitive' } },
+                { NOT: { firstTrafficMedium: { in: ['cpc', 'paid_social', 'paid', 'ads'] } } },
+                { NOT: { firstTrafficSource: { contains: 'Ads', mode: 'insensitive' } } }
+              ]
+            },
+            {
+              sessions: {
+                some: {
+                  trafficSource: { contains: 'Instagram', mode: 'insensitive' },
+                  NOT: { trafficMedium: { in: ['cpc', 'paid_social', 'paid', 'ads'] } },
+                  NOT: { trafficSource: { contains: 'Ads', mode: 'insensitive' } }
+                }
+              }
+            },
+            { pageVisits: { some: { referrer: { contains: 'instagram', mode: 'insensitive' } } } },
+            { sessions: { some: { userAgent: { contains: 'instagram', mode: 'insensitive' } } } }
+          ]
+        });
       } else if (normalizedSource === 'ADS') {
         andConditions.push({
           OR: [
             { firstTrafficMedium: { in: ['cpc', 'paid_social', 'ads', 'ppc'] } },
+            { firstTrafficSource: { contains: 'Ads', mode: 'insensitive' } },
             { sessions: { some: { trafficMedium: { in: ['cpc', 'paid_social', 'ads', 'ppc'] } } } },
+            { sessions: { some: { trafficSource: { contains: 'Ads', mode: 'insensitive' } } } },
             { sessions: { some: { utmCampaign: { not: null } } } }
           ]
         });
@@ -434,14 +498,16 @@ export const getAnalyticsVisitors = async (req, res) => {
             {
               AND: [
                 { firstTrafficMedium: 'social' },
-                { NOT: { firstTrafficSource: { contains: 'WhatsApp', mode: 'insensitive' } } }
+                { NOT: { firstTrafficSource: { contains: 'WhatsApp', mode: 'insensitive' } } },
+                { NOT: { firstTrafficSource: { contains: 'Instagram', mode: 'insensitive' } } }
               ]
             },
             {
               sessions: {
                 some: {
                   trafficMedium: 'social',
-                  NOT: { trafficSource: { contains: 'WhatsApp', mode: 'insensitive' } }
+                  NOT: { trafficSource: { contains: 'WhatsApp', mode: 'insensitive' } },
+                  NOT: { trafficSource: { contains: 'Instagram', mode: 'insensitive' } }
                 }
               }
             }
@@ -571,13 +637,33 @@ export const getAnalyticsVisitors = async (req, res) => {
       let trafficMedium = latestSession?.trafficMedium || v.firstTrafficMedium || fallbackTraffic.medium;
       let utmCampaign = latestSession?.utmCampaign || null;
 
-      // If filtering by WHATSAPP and the visitor matched, ensure the badge explicitly shows WhatsApp
+      // If filtering by specific source, ensure the badge explicitly shows the matching source
       if (normalizedSource === 'WHATSAPP') {
         const isWa = /whatsapp/i.test(trafficSource || '') || /whatsapp/i.test(trafficMedium || '');
         if (!isWa) {
           trafficSource = 'WhatsApp';
           trafficMedium = 'social';
           utmCampaign = utmCampaign || 'WhatsApp Share';
+        }
+      } else if (normalizedSource === 'GOOGLE_ADS') {
+        const isGAd = /google.*ad|ad.*google/i.test(trafficSource || '') || (trafficSource?.includes('Google') && trafficMedium === 'cpc');
+        if (!isGAd) {
+          trafficSource = 'Google Ads';
+          trafficMedium = 'cpc';
+          utmCampaign = utmCampaign || 'Google Search Ads';
+        }
+      } else if (normalizedSource === 'META_ADS') {
+        const isMeta = /meta|facebook.*ad|instagram.*ad/i.test(trafficSource || '') || trafficMedium === 'paid_social';
+        if (!isMeta) {
+          trafficSource = 'Meta Ads';
+          trafficMedium = 'paid_social';
+          utmCampaign = utmCampaign || 'Meta Paid Ads';
+        }
+      } else if (normalizedSource === 'INSTAGRAM') {
+        const isInsta = /instagram/i.test(trafficSource || '') && !/ad/i.test(trafficSource || '');
+        if (!isInsta) {
+          trafficSource = 'Instagram';
+          trafficMedium = 'social';
         }
       }
 
