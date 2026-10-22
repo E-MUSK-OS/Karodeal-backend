@@ -27,6 +27,10 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
   } catch (e) {}
   const searchKeyword = utmTerm || referrerQuery || null;
 
+  // Extract Phone / Mobile if provided in URL params (e.g. ?phone=9876543210 or ?wa=9876543210)
+  const rawPhone = String(params.phone || params.mobile || params.wa_phone || params.wa_num || params.contact || '').replace(/[^\d+]/g, '').trim();
+  const phone = (rawPhone.length >= 10 && rawPhone.length <= 15) ? rawPhone : null;
+
   // 1. WhatsApp Detection (via Param, Referrer, or In-App Browser User-Agent)
   const isWaParam = 
     params.wa === '1' || 
@@ -44,11 +48,17 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
   const isWaUA = ua.includes('whatsapp');
 
   if (isWaParam || isWaReferrer || isWaUA) {
+    let waCampaign = utmCampaign || params.campaign || (isWaParam ? 'WhatsApp Marketing' : null);
+    if (phone) {
+      waCampaign = waCampaign ? `${waCampaign} [Phone: ${phone}]` : `WhatsApp: ${phone}`;
+    }
     return {
       source: 'WhatsApp',
       medium: utmMedium || 'social',
-      campaign: utmCampaign || params.campaign || (isWaParam ? 'WhatsApp Marketing' : null),
-      category: 'WHATSAPP'
+      campaign: waCampaign,
+      category: 'WHATSAPP',
+      phone,
+      searchKeyword
     };
   }
 

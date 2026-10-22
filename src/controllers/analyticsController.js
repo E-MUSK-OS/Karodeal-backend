@@ -687,6 +687,16 @@ export const getAnalyticsVisitors = async (req, res) => {
         (latestVisit?.status === 'ENDED' ? (latestVisit?.durationSeconds || 0) : 0)
       );
 
+      // Extract phone / WhatsApp number if embedded in campaign or params
+      let whatsappNumber = null;
+      const campaignToCheck = utmCampaign || latestSession?.utmCampaign || '';
+      if (campaignToCheck) {
+        const phoneMatch = campaignToCheck.match(/(?:phone:|whatsapp:|\+91|wa:)?\s*(\+?91?[6-9]\d{9})/i);
+        if (phoneMatch && phoneMatch[1]) {
+          whatsappNumber = phoneMatch[1].replace(/^\+?91/, '').trim();
+        }
+      }
+
       return {
         visitorId: v.id,
         firstVisitAt: v.firstVisitAt,
@@ -701,6 +711,7 @@ export const getAnalyticsVisitors = async (req, res) => {
         trafficSource,
         trafficMedium,
         utmCampaign,
+        whatsappNumber,
         referrer: latestVisit?.referrer || latestSession?.referrer || null,
         status: computedStatus,
         isLive,
@@ -833,6 +844,18 @@ export const getAnalyticsVisitorDetail = async (req, res) => {
       }
     }
 
+    // Extract phone / WhatsApp number if embedded in any session's campaign
+    let whatsappNumber = null;
+    for (const session of visitor.sessions) {
+      if (session.utmCampaign) {
+        const phoneMatch = session.utmCampaign.match(/(?:phone:|whatsapp:|\+91|wa:)?\s*(\+?91?[6-9]\d{9})/i);
+        if (phoneMatch && phoneMatch[1]) {
+          whatsappNumber = phoneMatch[1].replace(/^\+?91/, '').trim();
+          break;
+        }
+      }
+    }
+
     return res.json({
       visitor: {
         id: visitor.id,
@@ -851,6 +874,7 @@ export const getAnalyticsVisitorDetail = async (req, res) => {
           enteredAt: landingVisit.enteredAt
         } : null,
         detectedKeyword,
+        whatsappNumber,
         createdAt: visitor.createdAt
       },
       summary: {
