@@ -387,35 +387,73 @@ export const getAnalyticsVisitors = async (req, res) => {
 
     // Build filter conditions
     const where = {};
+    const andConditions = [];
 
     if (search && search.trim()) {
-      where.OR = [
-        { id: { contains: search.trim(), mode: 'insensitive' } },
-        { pageVisits: { some: { pagePath: { contains: search.trim(), mode: 'insensitive' } } } }
-      ];
+      andConditions.push({
+        OR: [
+          { id: { contains: search.trim(), mode: 'insensitive' } },
+          { pageVisits: { some: { pagePath: { contains: search.trim(), mode: 'insensitive' } } } }
+        ]
+      });
     }
 
-    if (source && source !== 'ALL') {
-      if (source === 'ADS') {
-        where.OR = [
-          { firstTrafficMedium: { in: ['cpc', 'paid_social', 'ads', 'ppc'] } },
-          { sessions: { some: { trafficMedium: { in: ['cpc', 'paid_social', 'ads', 'ppc'] } } } }
-        ];
-      } else if (source === 'SEARCH') {
-        where.OR = [
-          { firstTrafficSource: { contains: 'Search', mode: 'insensitive' } },
-          { sessions: { some: { trafficSource: { contains: 'Search', mode: 'insensitive' } } } }
-        ];
-      } else if (source === 'SOCIAL') {
-        where.OR = [
-          { firstTrafficMedium: 'social' },
-          { sessions: { some: { trafficMedium: 'social' } } }
-        ];
-      } else if (source === 'DIRECT') {
-        where.OR = [
-          { firstTrafficSource: { contains: 'Direct', mode: 'insensitive' } },
-          { firstTrafficSource: null }
-        ];
+    const normalizedSource = typeof source === 'string' ? source.trim().toUpperCase() : '';
+    if (normalizedSource && normalizedSource !== 'ALL') {
+      if (normalizedSource === 'WHATSAPP') {
+        andConditions.push({
+          OR: [
+            { firstTrafficSource: { contains: 'WhatsApp', mode: 'insensitive' } },
+            { firstTrafficMedium: { contains: 'whatsapp', mode: 'insensitive' } },
+            { sessions: { some: { trafficSource: { contains: 'WhatsApp', mode: 'insensitive' } } } },
+            { sessions: { some: { trafficMedium: { contains: 'whatsapp', mode: 'insensitive' } } } },
+            { sessions: { some: { utmCampaign: { contains: 'WhatsApp', mode: 'insensitive' } } } },
+            { pageVisits: { some: { referrer: { contains: 'whatsapp', mode: 'insensitive' } } } }
+          ]
+        });
+      } else if (normalizedSource === 'ADS') {
+        andConditions.push({
+          OR: [
+            { firstTrafficMedium: { in: ['cpc', 'paid_social', 'ads', 'ppc'] } },
+            { sessions: { some: { trafficMedium: { in: ['cpc', 'paid_social', 'ads', 'ppc'] } } } },
+            { sessions: { some: { utmCampaign: { not: null } } } }
+          ]
+        });
+      } else if (normalizedSource === 'SEARCH') {
+        andConditions.push({
+          OR: [
+            { firstTrafficSource: { contains: 'Search', mode: 'insensitive' } },
+            { firstTrafficMedium: 'organic' },
+            { sessions: { some: { trafficSource: { contains: 'Search', mode: 'insensitive' } } } },
+            { sessions: { some: { trafficMedium: 'organic' } } }
+          ]
+        });
+      } else if (normalizedSource === 'SOCIAL') {
+        andConditions.push({
+          OR: [
+            {
+              AND: [
+                { firstTrafficMedium: 'social' },
+                { NOT: { firstTrafficSource: { contains: 'WhatsApp', mode: 'insensitive' } } }
+              ]
+            },
+            {
+              sessions: {
+                some: {
+                  trafficMedium: 'social',
+                  NOT: { trafficSource: { contains: 'WhatsApp', mode: 'insensitive' } }
+                }
+              }
+            }
+          ]
+        });
+      } else if (normalizedSource === 'DIRECT') {
+        andConditions.push({
+          OR: [
+            { firstTrafficSource: { contains: 'Direct', mode: 'insensitive' } },
+            { firstTrafficSource: null }
+          ]
+        });
       }
     }
 
@@ -437,7 +475,11 @@ export const getAnalyticsVisitors = async (req, res) => {
 
     // Live Tab filter: only visitors active in the last 90 seconds
     if (tab === 'live') {
-      where.lastVisitAt = { gte: liveCutoff };
+      where.lastVisitAt = { ...where.lastVisitAt, gte: liveCutoff };
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
     }
 
     // Fetch total count and visitors in parallel
@@ -502,9 +544,19 @@ export const getAnalyticsVisitors = async (req, res) => {
       const fallbackTraffic = (latestVisit?.referrer || latestSession?.userAgent)
         ? parseTrafficSource(latestVisit?.referrer || '', {}, latestSession?.userAgent || '')
         : { source: 'Direct / Chrome Search', medium: 'direct' };
-      const trafficSource = latestSession?.trafficSource || v.firstTrafficSource || fallbackTraffic.source;
-      const trafficMedium = latestSession?.trafficMedium || v.firstTrafficMedium || fallbackTraffic.medium;
-      const utmCampaign = latestSession?.utmCampaign || null;
+      let trafficSource = latestSession?.trafficSource || v.firstTrafficSource || fallbackTraffic.source;
+      let trafficMedium = latestSession?.trafficMedium || v.firstTrafficMedium || fallbackTraffic.medium;
+      let utmCampaign = latestSession?.utmCampaign || null;
+
+      // If filtering by WHATSAPP and the visitor matched, ensure the badge explicitly shows WhatsApp
+      if (normalizedSource === 'WHATSAPP') {
+        const isWa = /whatsapp/i.test(trafficSource || '') || /whatsapp/i.test(trafficMedium || '');
+        if (!isWa) {
+          trafficSource = 'WhatsApp';
+          trafficMedium = 'social';
+          utmCampaign = utmCampaign || 'WhatsApp Share';
+        }
+      }
 
       // Compute the most accurate total active seconds for this visitor
       const visitorTotalActiveSeconds = Math.max(

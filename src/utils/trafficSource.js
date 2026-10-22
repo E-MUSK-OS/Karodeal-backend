@@ -37,7 +37,7 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
       source: 'WhatsApp',
       medium: utmMedium || 'social',
       campaign: utmCampaign || params.campaign || (isWaParam ? 'WhatsApp Marketing' : null),
-      category: 'SOCIAL'
+      category: 'WHATSAPP'
     };
   }
 
@@ -99,7 +99,7 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
     let medium = utmMedium || 'referral';
 
     if (/facebook|instagram|insta|twitter|x\.com|linkedin|youtube|pinterest|whatsapp|telegram|tiktok|reddit/i.test(utmSource)) {
-      category = 'SOCIAL';
+      category = (utmSource === 'wa' || /whatsapp/i.test(utmSource)) ? 'WHATSAPP' : 'SOCIAL';
       medium = 'social';
     } else if (/email|newsletter/i.test(utmMedium) || /email/i.test(utmSource)) {
       category = 'EMAIL';
@@ -152,7 +152,7 @@ export function parseTrafficSource(rawReferrer = '', queryParams = {}, userAgent
 
     // Social Media Platforms
     if (/whatsapp|com\.whatsapp|wa\.me/i.test(rawRef) || /whatsapp/i.test(hostname)) {
-      return { source: 'WhatsApp', medium: 'social', campaign: null, category: 'SOCIAL' };
+      return { source: 'WhatsApp', medium: 'social', campaign: null, category: 'WHATSAPP' };
     }
     if (/instagram\.com/i.test(hostname)) {
       return { source: 'Instagram', medium: 'social', campaign: null, category: 'SOCIAL' };
