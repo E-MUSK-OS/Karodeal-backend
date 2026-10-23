@@ -378,7 +378,7 @@ export const getAnalyticsVisitors = async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
     const skip = (page - 1) * limit;
 
-    const { search, status, pagePath, startDate, endDate, tab, source } = req.query;
+    const { search, status, pagePath, startDate, endDate, tab, source, visitorType } = req.query;
 
     const now = new Date();
     // A visitor is considered currently LIVE if they had confirmed activity within the last 90 seconds
@@ -566,14 +566,40 @@ export const getAnalyticsVisitors = async (req, res) => {
       where.AND = andConditions;
     }
 
+    // Clone baseWhere before applying visitorType filter to calculate total new/returning metrics accurately
+    const baseWhere = { ...where };
+
+    const newCountWhere = {
+      ...baseWhere,
+      ...(dateGte
+        ? { firstVisitAt: { gte: dateGte, ...(dateLte ? { lte: dateLte } : {}) } }
+        : { totalVisits: 1 })
+    };
+
+    const normalizedVisitorType = typeof visitorType === 'string' ? visitorType.trim().toUpperCase() : 'ALL';
+    if (normalizedVisitorType === 'NEW') {
+      if (dateGte) {
+        where.firstVisitAt = { gte: dateGte, ...(dateLte ? { lte: dateLte } : {}) };
+      } else {
+        where.totalVisits = 1;
+      }
+    } else if (normalizedVisitorType === 'RETURNING') {
+      if (dateGte) {
+        where.firstVisitAt = { lt: dateGte };
+      } else {
+        where.totalVisits = { gt: 1 };
+      }
+    }
+
     const pageVisitWhere = {};
     if (where.lastVisitAt) {
       pageVisitWhere.enteredAt = where.lastVisitAt;
     }
 
-    // Fetch total count and visitors in parallel
-    const [totalVisitors, rawVisitors, liveCount, totalPageVisits] = await Promise.all([
+    // Fetch total count, new visitors count, raw visitors, live count, and total page visits in parallel
+    const [totalVisitors, newVisitorsCount, rawVisitors, liveCount, totalPageVisits] = await Promise.all([
       prisma.analyticsVisitor.count({ where }),
+      prisma.analyticsVisitor.count({ where: newCountWhere }),
       prisma.analyticsVisitor.findMany({
         where,
         orderBy: { lastVisitAt: 'desc' },
@@ -598,6 +624,12 @@ export const getAnalyticsVisitors = async (req, res) => {
       }),
       prisma.analyticsPageVisit.count({ where: pageVisitWhere })
     ]);
+
+    let overallTotalVisitors = totalVisitors;
+    if (normalizedVisitorType !== 'ALL') {
+      overallTotalVisitors = await prisma.analyticsVisitor.count({ where: baseWhere });
+    }
+    const returningVisitorsCount = Math.max(0, overallTotalVisitors - newVisitorsCount);
 
     // Format visitor rows with detailed timing and live/inactive/ended logic
     const visitors = rawVisitors.map((v) => {
@@ -697,11 +729,16 @@ export const getAnalyticsVisitors = async (req, res) => {
         }
       }
 
+      const isNewVisitor = dateGte
+        ? (new Date(v.firstVisitAt).getTime() >= dateGte.getTime())
+        : (v.totalVisits <= 1);
+
       return {
         visitorId: v.id,
         firstVisitAt: v.firstVisitAt,
         lastVisitAt: v.lastVisitAt,
         totalVisits: v.totalVisits,
+        isNewVisitor,
         totalPageVisits: v._count.pageVisits,
         totalSessions: v._count.sessions,
         totalActiveSeconds: visitorTotalActiveSeconds,
@@ -747,7 +784,9 @@ export const getAnalyticsVisitors = async (req, res) => {
       },
       stats: {
         liveVisitorsCount: liveCount,
-        totalVisitorsCount: totalVisitors,
+        totalVisitorsCount: overallTotalVisitors,
+        newVisitorsCount: newVisitorsCount,
+        returningVisitorsCount: returningVisitorsCount,
         totalPageVisitsCount: totalPageVisits
       }
     });
@@ -862,6 +901,7 @@ export const getAnalyticsVisitorDetail = async (req, res) => {
         firstVisitAt: visitor.firstVisitAt,
         lastVisitAt: visitor.lastVisitAt,
         totalVisits: visitor.totalVisits,
+        isNewVisitor: visitor.totalVisits <= 1,
         deviceType: visitor.deviceType,
         browser: visitor.browser,
         os: visitor.os,
