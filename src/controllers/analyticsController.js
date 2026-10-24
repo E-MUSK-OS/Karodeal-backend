@@ -596,8 +596,16 @@ export const getAnalyticsVisitors = async (req, res) => {
       pageVisitWhere.enteredAt = where.lastVisitAt;
     }
 
-    // Fetch total count, new visitors count, raw visitors, live count, and total page visits in parallel
-    const [totalVisitors, newVisitorsCount, rawVisitors, liveCount, totalPageVisits] = await Promise.all([
+    // Fetch total count, new visitors count, raw visitors, live count, total page visits, and duration/engagement aggregates in parallel
+    const [
+      totalVisitors,
+      newVisitorsCount,
+      rawVisitors,
+      liveCount,
+      totalPageVisits,
+      visitorAgg,
+      pageVisitAgg
+    ] = await Promise.all([
       prisma.analyticsVisitor.count({ where }),
       prisma.analyticsVisitor.count({ where: newCountWhere }),
       prisma.analyticsVisitor.findMany({
@@ -622,7 +630,19 @@ export const getAnalyticsVisitors = async (req, res) => {
       prisma.analyticsVisitor.count({
         where: { lastVisitAt: { gte: liveCutoff } }
       }),
-      prisma.analyticsPageVisit.count({ where: pageVisitWhere })
+      prisma.analyticsPageVisit.count({ where: pageVisitWhere }),
+      prisma.analyticsVisitor.aggregate({
+        where,
+        _avg: { totalActiveSeconds: true },
+        _sum: { totalActiveSeconds: true }
+      }),
+      prisma.analyticsPageVisit.aggregate({
+        where: {
+          visitor: where,
+          ...(where.lastVisitAt ? { enteredAt: where.lastVisitAt } : {})
+        },
+        _sum: { durationSeconds: true, activeSeconds: true }
+      })
     ]);
 
     let overallTotalVisitors = totalVisitors;
@@ -630,6 +650,23 @@ export const getAnalyticsVisitors = async (req, res) => {
       overallTotalVisitors = await prisma.analyticsVisitor.count({ where: baseWhere });
     }
     const returningVisitorsCount = Math.max(0, overallTotalVisitors - newVisitorsCount);
+
+    // Calculate Average Duration and Active Time on Site across visitors
+    const effectiveTotalVisitors = overallTotalVisitors || totalVisitors;
+    const totalActiveTime = Math.max(
+      visitorAgg?._sum?.totalActiveSeconds || 0,
+      pageVisitAgg?._sum?.activeSeconds || 0
+    );
+    const totalDurationTime = Math.max(
+      pageVisitAgg?._sum?.durationSeconds || 0,
+      totalActiveTime
+    );
+    const avgDurationSeconds = effectiveTotalVisitors > 0
+      ? Math.round(totalDurationTime / effectiveTotalVisitors)
+      : 0;
+    const avgActiveSeconds = effectiveTotalVisitors > 0
+      ? Math.round(totalActiveTime / effectiveTotalVisitors)
+      : 0;
 
     // Format visitor rows with detailed timing and live/inactive/ended logic
     const visitors = rawVisitors.map((v) => {
@@ -737,6 +774,8 @@ export const getAnalyticsVisitors = async (req, res) => {
         visitorId: v.id,
         firstVisitAt: v.firstVisitAt,
         lastVisitAt: v.lastVisitAt,
+        visitEnteredAt: latestSession?.startedAt || latestVisit?.enteredAt || v.lastVisitAt,
+        visitLeftAt: (computedStatus === 'ENDED') ? (latestVisit?.leftAt || latestVisit?.lastActivityAt || latestSession?.lastActivityAt || v.lastVisitAt) : null,
         totalVisits: v.totalVisits,
         isNewVisitor,
         totalPageVisits: v._count.pageVisits,
@@ -787,7 +826,11 @@ export const getAnalyticsVisitors = async (req, res) => {
         totalVisitorsCount: overallTotalVisitors,
         newVisitorsCount: newVisitorsCount,
         returningVisitorsCount: returningVisitorsCount,
-        totalPageVisitsCount: totalPageVisits
+        totalPageVisitsCount: totalPageVisits,
+        avgDurationSeconds,
+        avgActiveSeconds,
+        totalDurationSeconds: totalDurationTime,
+        totalActiveSeconds: totalActiveTime
       }
     });
   } catch (error) {
